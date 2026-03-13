@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -87,12 +88,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("login: failed to update last_login_at", "error", err)
 	}
 
-	// Set session cookie
+	// Set session cookie. Derive the Secure flag from the configured base_url
+	// so the cookie works correctly behind HTTPS reverse proxies.
+	secureCookie := strings.HasPrefix(h.config.Server.BaseURL, "https://")
 	http.SetCookie(w, &http.Cookie{
 		Name:     "codex_session",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   lifetimeDays * 24 * 60 * 60,
 	})
@@ -127,12 +131,14 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Clear cookie
+	// Clear cookie. Secure flag must match the login cookie for browsers to clear it.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "codex_session",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   strings.HasPrefix(h.config.Server.BaseURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 
