@@ -21,11 +21,18 @@ jobs:
       - name: Install Go dependencies
         run: go mod download
 
+      # mattn/go-sqlite3 compiles its own bundled SQLite amalgamation via CGo.
+      # The `fts5` build tag passes -DSQLITE_ENABLE_FTS5 to that compilation,
+      # enabling the FTS5 full-text search module used by the works_fts table.
+      # gcc is pre-installed on ubuntu-latest; no extra apt packages are needed.
       - name: Build
-        run: go build ./...
+        run: go build -tags fts5 ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -tags fts5 -race ./...
+
+  # The frontend (SvelteKit) is a Phase 3 deliverable. The Node.js build job
+  # will be added to this workflow when the web/ directory is introduced.
 
   # Node/Svelte build job — enabled once web/ directory is added
   # build-web:
@@ -43,4 +50,3 @@ jobs:
   #       run: npm ci
   #     - name: Build Svelte
   #       working-directory: web
-  #       run: npm run build

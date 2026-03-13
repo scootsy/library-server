@@ -1,0 +1,47 @@
+# config.example.yaml — Codex configuration reference
+# Copy to config.yaml and adjust as needed.
+# All values shown are defaults unless marked otherwise.
+#
+# Environment variable overrides (all optional):
+#   CODEX_HOST         — overrides server.host
+#   CODEX_PORT         — overrides server.port
+#   CODEX_BASE_URL     — overrides server.base_url
+#   CODEX_DB_PATH      — overrides database.path
+#   CODEX_LOG_LEVEL    — overrides log.level
+#   CODEX_LOG_FORMAT   — overrides log.format
+
+# ── HTTP server ────────────────────────────────────────────────────────────────
+server:
+  # Address to bind. Use 0.0.0.0 to listen on all interfaces.
+  host: "0.0.0.0"
+
+  # Port to listen on.
+  port: 8080
+
+  # Public-facing base URL used for link generation (OPDS, cover URLs, etc.).
+  # Must not end with a trailing slash.
+  base_url: "http://localhost:8080"
+
+# ── Database ────────────────────────────────────────────────────────────────────
+database:
+  # Path to the SQLite database file. The directory must exist and be writable.
+  # In Docker, mount /config as a volume and leave this as-is.
+  path: "/config/library.db"
+
+# ── Media libraries ──────────────────────────────────────────────────────────────
+# List of directories that Codex will scan for books and audiobooks.
+# Multiple roots are supported (e.g. separate book and audiobook directories).
+media:
+  roots:
+    - name: "Books"
+      path: "/media/books"
+    # - name: "Audiobooks"
+    #   path: "/media/audiobooks"
+
+# ── Logging ───────────────────────────────────────────────────────────────────────
+log:
+  # Log level: debug | info | warn | error
+  level: "info"
+
+  # Log format: text (human-readable) | json (structured, for log aggregators)
+  format: "text"
