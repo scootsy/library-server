@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/scootsy/library-server/embedded"
+	"github.com/scootsy/library-server/internal/api"
 	"github.com/scootsy/library-server/internal/config"
 	"github.com/scootsy/library-server/internal/database"
 	"github.com/scootsy/library-server/internal/database/queries"
@@ -29,8 +31,8 @@ func main() {
 func run() int {
 	// ── Flags ────────────────────────────────────────────────────────────────
 	var (
-		configPath = flag.String("config", "", "path to config.yaml (optional)")
-		scanOnly   = flag.Bool("scan", false, "run a library scan and exit")
+		configPath  = flag.String("config", "", "path to config.yaml (optional)")
+		scanOnly    = flag.Bool("scan", false, "run a library scan and exit")
 		migrateOnly = flag.Bool("migrate", false, "run database migrations and exit")
 	)
 	flag.Parse()
@@ -80,8 +82,25 @@ func run() int {
 	// ── Start metadata engine background worker ─────────────────────────────
 	engine.Start(30 * time.Second)
 
+	// ── Scan manager ─────────────────────────────────────────────────────────
+	scanMgr := api.NewScanManager(db, cfg, engine)
+
+	// ── REST API ─────────────────────────────────────────────────────────────
+	apiRouter := api.NewRouter(&api.Dependencies{
+		DB:      db,
+		Config:  cfg,
+		Engine:  engine,
+		Scanner: scanMgr,
+	})
+
 	// ── HTTP server ──────────────────────────────────────────────────────────
-	srv := server.New(cfg)
+	webFS := embedded.WebFS()
+	if webFS != nil {
+		slog.Info("embedded web UI loaded")
+	} else {
+		slog.Info("no embedded web UI found, serving API only")
+	}
+	srv := server.New(cfg, apiRouter, webFS)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

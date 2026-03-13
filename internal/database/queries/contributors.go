@@ -22,6 +22,109 @@ type WorkContributor struct {
 	Position      int
 }
 
+// ListContributors returns all contributors with their work count.
+func ListContributors(db *sql.DB, limit, offset int) ([]struct {
+	Contributor
+	WorkCount int
+}, int, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM contributors`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("counting contributors: %w", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT c.id, c.name, c.sort_name, c.identifiers, COUNT(DISTINCT wc.work_id) as work_count
+		FROM contributors c
+		LEFT JOIN work_contributors wc ON wc.contributor_id = c.id
+		GROUP BY c.id
+		ORDER BY c.sort_name COLLATE NOCASE
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing contributors: %w", err)
+	}
+	defer rows.Close()
+
+	var results []struct {
+		Contributor
+		WorkCount int
+	}
+	for rows.Next() {
+		var c Contributor
+		var identJSON string
+		var count int
+		if err := rows.Scan(&c.ID, &c.Name, &c.SortName, &identJSON, &count); err != nil {
+			return nil, 0, fmt.Errorf("scanning contributor: %w", err)
+		}
+		c.Identifiers = make(map[string]string)
+		if identJSON != "" && identJSON != "{}" {
+			_ = json.Unmarshal([]byte(identJSON), &c.Identifiers)
+		}
+		results = append(results, struct {
+			Contributor
+			WorkCount int
+		}{c, count})
+	}
+	return results, total, rows.Err()
+}
+
+// GetContributorByID returns a contributor by ID, or nil if not found.
+func GetContributorByID(db *sql.DB, id string) (*Contributor, error) {
+	var c Contributor
+	var identJSON string
+	err := db.QueryRow(`SELECT id, name, sort_name, identifiers FROM contributors WHERE id = ?`, id).Scan(
+		&c.ID, &c.Name, &c.SortName, &identJSON,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying contributor %q: %w", id, err)
+	}
+	c.Identifiers = make(map[string]string)
+	if identJSON != "" && identJSON != "{}" {
+		_ = json.Unmarshal([]byte(identJSON), &c.Identifiers)
+	}
+	return &c, nil
+}
+
+// GetWorksByContributor returns all works by a given contributor.
+func GetWorksByContributor(db *sql.DB, contributorID string, limit, offset int) ([]*WorkSummary, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	var total int
+	err := db.QueryRow(`SELECT COUNT(DISTINCT work_id) FROM work_contributors WHERE contributor_id = ?`, contributorID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting works for contributor: %w", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT w.id, w.title, w.sort_title, COALESCE(w.subtitle,''), COALESCE(w.language,''),
+		       COALESCE(w.publisher,''), COALESCE(w.publish_date,''),
+		       COALESCE(w.page_count,0), COALESCE(w.duration_seconds,0),
+		       COALESCE(w.match_confidence,0), w.needs_review, w.has_media_overlay,
+		       w.added_at, w.updated_at
+		FROM work_contributors wc
+		JOIN works w ON w.id = wc.work_id
+		WHERE wc.contributor_id = ?
+		GROUP BY w.id
+		ORDER BY w.sort_title
+		LIMIT ? OFFSET ?
+	`, contributorID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("querying works by contributor: %w", err)
+	}
+	defer rows.Close()
+
+	return scanWorkSummaryRows(rows, total)
+}
+
 // UpsertContributor inserts or updates a contributor by (name, sort_name).
 // The provided id is used only on insert; on conflict the existing row is returned.
 func UpsertContributor(db *sql.DB, id, name, sortName string, identifiers map[string]string) (string, error) {

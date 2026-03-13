@@ -1,0 +1,28 @@
+# Binary
+/codex
+
+# Web build output (rebuilt from source)
+web/build/
+web/node_modules/
+web/.svelte-kit/
+
+# Go
+*.exe
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+config.yaml
+*.db
+*.db-wal
+*.db-shm
