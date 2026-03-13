@@ -29,7 +29,7 @@ func UpsertWorkTag(db *sql.DB, workID, tagID string) error {
 	_, err := db.Exec(`
 		INSERT INTO work_tags (work_id, tag_id)
 		VALUES (?, ?)
-		ON CONFLICT DO NOTHING
+		ON CONFLICT(work_id, tag_id) DO NOTHING
 	`, workID, tagID)
 	if err != nil {
 		return fmt.Errorf("upserting work_tag (%s, %s): %w", workID, tagID, err)

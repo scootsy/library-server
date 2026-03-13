@@ -24,13 +24,15 @@ type GoogleBooks struct {
 }
 
 // NewGoogleBooks returns a GoogleBooks source. apiKey may be empty for
-// unauthenticated requests (lower rate limits).
-func NewGoogleBooks(apiKey string) *GoogleBooks {
+// unauthenticated requests (lower rate limits). If httpClient is nil,
+// a default client with a 15-second timeout is used.
+func NewGoogleBooks(apiKey string, httpClient *http.Client) *GoogleBooks {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 15 * time.Second}
+	}
 	return &GoogleBooks{
-		apiKey: apiKey,
-		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
-		},
+		apiKey:     apiKey,
+		httpClient: httpClient,
 	}
 }
 
@@ -157,7 +159,7 @@ func (g *GoogleBooks) get(ctx context.Context, reqURL string) ([]byte, error) {
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn("google_books unexpected status", "status", resp.StatusCode, "url", reqURL)
+		slog.Warn("google_books unexpected status", "status", resp.StatusCode, "url", sanitizeURL(reqURL))
 		return nil, fmt.Errorf("unexpected HTTP status %d", resp.StatusCode)
 	}
 
@@ -231,11 +233,18 @@ var (
 
 func parseSeriesFromSubtitle(subtitle string) (name string, pos float64) {
 	if m := reBookOfSeries.FindStringSubmatch(subtitle); len(m) == 3 {
-		p, _ := strconv.ParseFloat(m[1], 64)
+		// ParseFloat is safe here: the regex only captures digits and optional decimal.
+		p, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			return strings.TrimSpace(m[2]), 0
+		}
 		return strings.TrimSpace(m[2]), p
 	}
 	if m := reSeriesBookNum.FindStringSubmatch(subtitle); len(m) == 3 {
-		p, _ := strconv.ParseFloat(m[2], 64)
+		p, err := strconv.ParseFloat(m[2], 64)
+		if err != nil {
+			return strings.TrimSpace(m[1]), 0
+		}
 		return strings.TrimSpace(m[1]), p
 	}
 	return "", 0

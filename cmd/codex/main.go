@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/google/uuid"
@@ -122,6 +123,25 @@ func runScan(db *sql.DB, cfg *config.Config) error {
 	return nil
 }
 
+// sensitiveKeys contains log attribute key names whose values must be redacted.
+var sensitiveKeys = map[string]bool{
+	"password":      true,
+	"secret":        true,
+	"token":         true,
+	"key":           true,
+	"authorization": true,
+	"api_key":       true,
+}
+
+// redactSensitiveAttrs is a ReplaceAttr function for slog that redacts values
+// of attributes whose keys match known sensitive field names.
+func redactSensitiveAttrs(_ []string, a slog.Attr) slog.Attr {
+	if sensitiveKeys[strings.ToLower(a.Key)] {
+		a.Value = slog.StringValue("[REDACTED]")
+	}
+	return a
+}
+
 func setupLogger(cfg *config.Config) {
 	var level slog.Level
 	switch cfg.Log.Level {
@@ -135,7 +155,10 @@ func setupLogger(cfg *config.Config) {
 		level = slog.LevelInfo
 	}
 
-	opts := &slog.HandlerOptions{Level: level}
+	opts := &slog.HandlerOptions{
+		Level:       level,
+		ReplaceAttr: redactSensitiveAttrs,
+	}
 	var handler slog.Handler
 	if cfg.Log.Format == "json" {
 		handler = slog.NewJSONHandler(os.Stderr, opts)

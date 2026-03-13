@@ -4,6 +4,7 @@ package sources
 
 import (
 	"context"
+	"net/url"
 	"time"
 )
 
@@ -77,4 +78,22 @@ type Contributor struct {
 type Series struct {
 	Name     string
 	Position float64 // 0 = unknown/not applicable
+}
+
+// sanitizeURL strips query parameters that may contain secrets (key, api_key, token)
+// before the URL is logged.
+func sanitizeURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "[invalid-url]"
+	}
+	q := u.Query()
+	for param := range q {
+		switch param {
+		case "key", "api_key", "token", "secret", "authorization":
+			q.Set(param, "[REDACTED]")
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }

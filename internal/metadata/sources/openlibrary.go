@@ -21,12 +21,14 @@ type OpenLibrary struct {
 	httpClient *http.Client
 }
 
-// NewOpenLibrary returns an OpenLibrary source.
-func NewOpenLibrary() *OpenLibrary {
+// NewOpenLibrary returns an OpenLibrary source. If httpClient is nil,
+// a default client with a 15-second timeout is used.
+func NewOpenLibrary(httpClient *http.Client) *OpenLibrary {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 15 * time.Second}
+	}
 	return &OpenLibrary{
-		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
-		},
+		httpClient: httpClient,
 	}
 }
 

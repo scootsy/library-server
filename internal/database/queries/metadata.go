@@ -28,7 +28,7 @@ func EnqueueMetadataTask(db *sql.DB, t *MetadataTask) error {
 	_, err := db.Exec(`
 		INSERT INTO metadata_tasks (id, work_id, status, task_type, priority)
 		VALUES (?, ?, 'pending', ?, ?)
-		ON CONFLICT DO NOTHING
+		ON CONFLICT(work_id, task_type) DO NOTHING
 	`, t.ID, t.WorkID, t.TaskType, t.Priority)
 	if err != nil {
 		return fmt.Errorf("enqueueing metadata task for work %q: %w", t.WorkID, err)
@@ -66,13 +66,12 @@ func DequeueMetadataTask(db *sql.DB) (*MetadataTask, error) {
 		&t.Candidates, &t.Error, &createdAt,
 	)
 	if err == sql.ErrNoRows {
-		_ = tx.Rollback()
-		return nil, nil
+		return nil, nil // deferred rollback handles cleanup
 	}
 	if err != nil {
 		return nil, fmt.Errorf("scanning dequeue row: %w", err)
 	}
-	t.CreatedAt, _ = time.Parse(time.DateTime, createdAt)
+	t.CreatedAt = parseDBTime(createdAt)
 
 	_, err = tx.Exec(`
 		UPDATE metadata_tasks
@@ -153,13 +152,13 @@ func GetTasksForWork(db *sql.DB, workID string) ([]*MetadataTask, error) {
 		); err != nil {
 			return nil, fmt.Errorf("scanning task row: %w", err)
 		}
-		t.CreatedAt, _ = time.Parse(time.DateTime, createdAt)
+		t.CreatedAt = parseDBTime(createdAt)
 		if startedAt != "" {
-			ts, _ := time.Parse(time.DateTime, startedAt)
+			ts := parseDBTime(startedAt)
 			t.StartedAt = &ts
 		}
 		if completedAt != "" {
-			tc, _ := time.Parse(time.DateTime, completedAt)
+			tc := parseDBTime(completedAt)
 			t.CompletedAt = &tc
 		}
 		tasks = append(tasks, &t)
@@ -215,7 +214,7 @@ func GetSourceCache(db *sql.DB, workID, source string) (*SourceCacheEntry, error
 	if err != nil {
 		return nil, fmt.Errorf("scanning source cache row: %w", err)
 	}
-	e.FetchedAt, _ = time.Parse(time.DateTime, fetchedAt)
+	e.FetchedAt = parseDBTime(fetchedAt)
 	return &e, nil
 }
 

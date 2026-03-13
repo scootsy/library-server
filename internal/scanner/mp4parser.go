@@ -262,10 +262,8 @@ func (p *mp4Parser) walkAtoms(start, end int64, fn func(string, []byte) error) e
 			size = int64(binary.BigEndian.Uint64(extSize[:]))
 			payloadSize = size - 16
 		} else if size == 0 {
-			// Atom extends to EOF
-			cur, _ := p.r.Seek(0, io.SeekCurrent)
+			// Atom extends to EOF — payloadSize stays -1 (skip reading)
 			payloadSize = -1
-			_ = cur
 		} else {
 			payloadSize = size - 8
 		}
@@ -288,9 +286,14 @@ func (p *mp4Parser) walkAtoms(start, end int64, fn func(string, []byte) error) e
 			return err
 		}
 
-		cur, _ := p.r.Seek(0, io.SeekCurrent)
-		if end > 0 && cur >= end {
-			break
+		if end > 0 {
+			cur, err := p.r.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return fmt.Errorf("seeking current position: %w", err)
+			}
+			if cur >= end {
+				break
+			}
 		}
 	}
 	return nil
@@ -346,9 +349,7 @@ func (p *id3Parser) parse() error {
 		return fmt.Errorf("not an ID3v2 file")
 	}
 
-	// major version
 	ver := header[3]
-	_ = ver
 
 	// Sync-safe size
 	sz := (int(header[6]) << 21) | (int(header[7]) << 14) | (int(header[8]) << 7) | int(header[9])

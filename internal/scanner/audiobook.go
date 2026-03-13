@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -32,22 +34,13 @@ type AudioChapter struct {
 }
 
 // ExtractAudioMeta reads tag metadata from an M4B, MP3, FLAC, or OGG file.
-// epubPath must be an absolute path that has already been validated.
+// filePath must be an absolute path that has already been validated.
 func ExtractAudioMeta(filePath string) (*AudioMeta, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("opening audio file %q: %w", filePath, err)
-	}
-	defer f.Close()
-
-	// Use a minimal approach: read the raw ID3/MP4 tags ourselves for the fields
-	// we need. For full tag parsing in a future phase, integrate a tag library
-	// (e.g. github.com/dhowden/tag) once network access is available.
-	ext := strings.ToLower(filePath[strings.LastIndex(filePath, ".")+1:])
+	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
-	case "m4b", "m4a", "mp4":
+	case ".m4b", ".m4a", ".mp4":
 		return extractMP4Meta(filePath)
-	case "mp3":
+	case ".mp3":
 		return extractID3Meta(filePath)
 	default:
 		return &AudioMeta{}, nil
@@ -67,7 +60,7 @@ func extractMP4Meta(filePath string) (*AudioMeta, error) {
 	// Parse MP4 boxes to find the moov/udta/meta/ilst atoms.
 	parser := &mp4Parser{r: f}
 	if err := parser.parse(); err != nil {
-		// Non-fatal: return an empty metadata struct so scanning can continue.
+		slog.Warn("mp4 parse failed, returning empty metadata", "file", filePath, "error", err)
 		return &AudioMeta{}, nil
 	}
 
@@ -102,6 +95,7 @@ func extractID3Meta(filePath string) (*AudioMeta, error) {
 
 	parser := &id3Parser{r: f}
 	if err := parser.parse(); err != nil {
+		slog.Warn("id3 parse failed, returning empty metadata", "file", filePath, "error", err)
 		return &AudioMeta{}, nil
 	}
 

@@ -64,6 +64,10 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := s.http.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("graceful shutdown: %w", err)
 		}
+		// Drain the error channel to ensure the Serve goroutine exits cleanly.
+		if err := <-errCh; err != nil {
+			return fmt.Errorf("server error during shutdown: %w", err)
+		}
 		return nil
 	case err := <-errCh:
 		return err

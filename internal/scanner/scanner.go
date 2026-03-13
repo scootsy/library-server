@@ -126,7 +126,7 @@ func (s *Scanner) indexDirectory(absDir, relDir string, mediaFiles []mediaFile) 
 		}
 
 		// Sidecar is new or changed; re-index from it.
-		sc, err := ReadSidecar(absDir)
+		sc, err := ReadSidecar(absDir, s.mediaRoot.RootPath)
 		if err != nil {
 			return fmt.Errorf("reading sidecar: %w", err)
 		}
@@ -148,12 +148,15 @@ func (s *Scanner) indexDirectory(absDir, relDir string, mediaFiles []mediaFile) 
 	sc := buildSidecar(relDir, extracted, mediaFiles)
 
 	// Write the sidecar so future scans are faster.
-	if err := WriteSidecar(absDir, sc); err != nil {
+	if err := WriteSidecar(absDir, sc, s.mediaRoot.RootPath); err != nil {
 		slog.Warn("failed to write sidecar", "dir", relDir, "error", err)
 		// Non-fatal: continue indexing without persisting the sidecar.
 	}
 
-	sidecarHash, _ := hashFile(filepath.Join(absDir, sidecarFilename))
+	sidecarHash, err := hashFile(filepath.Join(absDir, sidecarFilename))
+	if err != nil {
+		slog.Warn("failed to hash sidecar after write", "dir", relDir, "error", err)
+	}
 
 	existing, err := queries.GetWorkByPath(s.db, s.mediaRoot.ID, relDir)
 	if err != nil {
@@ -393,7 +396,11 @@ func (s *Scanner) extractFromFiles(absDir string, mf []mediaFile) (*extractedMet
 	// Try EPUB first (richest metadata source)
 	for _, f := range mf {
 		if f.format == "epub" {
-			epubPath := filepath.Join(absDir, f.name)
+			epubPath, err := security.SafePath(filepath.Join(absDir, f.name), s.mediaRoot.RootPath)
+			if err != nil {
+				slog.Warn("skipping epub with unsafe path", "file", f.name, "error", err)
+				continue
+			}
 			m, err := ExtractEPUBMeta(epubPath)
 			if err != nil {
 				slog.Debug("EPUB extraction failed", "file", f.name, "error", err)
@@ -407,7 +414,11 @@ func (s *Scanner) extractFromFiles(absDir string, mf []mediaFile) (*extractedMet
 	// Try M4B/audiobook for audio metadata and chapters
 	for _, f := range mf {
 		if audiobookFormats[f.format] {
-			audioPath := filepath.Join(absDir, f.name)
+			audioPath, err := security.SafePath(filepath.Join(absDir, f.name), s.mediaRoot.RootPath)
+			if err != nil {
+				slog.Warn("skipping audio file with unsafe path", "file", f.name, "error", err)
+				continue
+			}
 			m, err := ExtractAudioMeta(audioPath)
 			if err != nil {
 				slog.Debug("audio extraction failed", "file", f.name, "error", err)
@@ -420,7 +431,11 @@ func (s *Scanner) extractFromFiles(absDir string, mf []mediaFile) (*extractedMet
 
 	// Fall back to folder hints if we couldn't get a title
 	if meta.title == "" {
-		relDir, _ := filepath.Rel(s.mediaRoot.RootPath, absDir)
+		relDir, err := filepath.Rel(s.mediaRoot.RootPath, absDir)
+		if err != nil {
+			slog.Warn("computing relative path for hints failed", "path", absDir, "error", err)
+			return meta, nil
+		}
 		hints := ParseFolderHints(relDir)
 		meta.fromHints(hints)
 	}
@@ -651,6 +666,7 @@ type mediaFile struct {
 func findMediaFiles(dir string) []mediaFile {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		slog.Warn("failed to read directory for media files", "dir", dir, "error", err)
 		return nil
 	}
 
@@ -660,6 +676,11 @@ func findMediaFiles(dir string) []mediaFile {
 			continue
 		}
 		name := e.Name()
+		// Reject filenames containing path separators to prevent traversal.
+		if strings.ContainsAny(name, "/\\") || strings.ContainsRune(name, 0) {
+			slog.Warn("skipping file with suspicious name", "dir", dir, "name", name)
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(name))
 		format, ok := supportedFormats[ext]
 		if !ok {
@@ -667,6 +688,7 @@ func findMediaFiles(dir string) []mediaFile {
 		}
 		info, err := e.Info()
 		if err != nil {
+			slog.Debug("failed to stat media file", "dir", dir, "name", name, "error", err)
 			continue
 		}
 		files = append(files, mediaFile{
