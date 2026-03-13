@@ -12,20 +12,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Install Node dependencies
-        run: npm install
-
       - name: Install Go dependencies
         run: go mod download
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./...
+
+  # Node/Svelte build job — enabled once web/ directory is added
+  # build-web:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version-file: 'web/.nvmrc'
+  #         cache: 'npm'
+  #         cache-dependency-path: 'web/package-lock.json'
+  #     - name: Install Node dependencies
+  #       working-directory: web
+  #       run: npm ci
+  #     - name: Build Svelte
+  #       working-directory: web
+  #       run: npm run build
