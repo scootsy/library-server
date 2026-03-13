@@ -19,7 +19,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
-          cache: false  # no go.sum yet; re-enable once external dependencies are added
 
       - name: Install Go dependencies
         run: go mod download

@@ -26,9 +26,9 @@ FROM debian:bookworm-slim
 # Create a non-root user for the process.
 RUN groupadd -r codex && useradd -r -g codex -d /config codex
 
-# Runtime SQLite shared library (needed when not statically linking).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Standard mount points (bind-mount your actual media here at runtime).
@@ -48,7 +48,7 @@ EXPOSE 8080
 
 # Health check hits the /health endpoint every 30 s.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/usr/local/bin/codex", "-version"] || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/codex"]
 CMD ["--config", "/config/config.yaml"]

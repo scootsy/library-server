@@ -214,6 +214,10 @@ func (o *OpenLibrary) docToCandidate(doc olSearchDoc) Candidate {
 		c.Series = append(c.Series, Series{Name: s})
 	}
 
+	for _, subj := range doc.Subject {
+		c.Tags = append(c.Tags, subj)
+	}
+
 	return c
 }
 
