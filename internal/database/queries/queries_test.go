@@ -244,3 +244,78 @@ func TestUpsertAndDeleteIdentifiers(t *testing.T) {
 		t.Fatalf("DeleteWorkIdentifiers: %v", err)
 	}
 }
+
+func TestGetWorkIdentifiers(t *testing.T) {
+	db := openTestDB(t)
+	rootID := insertTestRoot(t, db)
+	w := &queries.Work{ID: "w-1", MediaRootID: rootID, DirectoryPath: "d", Title: "T", SortTitle: "T"}
+	if err := queries.UpsertWork(db, w); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := queries.UpsertIdentifier(db, "w-1", "isbn_13", "9780765326355"); err != nil {
+		t.Fatal(err)
+	}
+	if err := queries.UpsertIdentifier(db, "w-1", "asin", "B001QKBHG4"); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := queries.GetWorkIdentifiers(db, "w-1")
+	if err != nil {
+		t.Fatalf("GetWorkIdentifiers: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 identifiers, got %d", len(ids))
+	}
+	if ids["isbn_13"] != "9780765326355" {
+		t.Errorf("isbn_13 = %q, want %q", ids["isbn_13"], "9780765326355")
+	}
+	if ids["asin"] != "B001QKBHG4" {
+		t.Errorf("asin = %q, want %q", ids["asin"], "B001QKBHG4")
+	}
+}
+
+func TestGetWorkIdentifiers_Empty(t *testing.T) {
+	db := openTestDB(t)
+	rootID := insertTestRoot(t, db)
+	w := &queries.Work{ID: "w-1", MediaRootID: rootID, DirectoryPath: "d", Title: "T", SortTitle: "T"}
+	if err := queries.UpsertWork(db, w); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := queries.GetWorkIdentifiers(db, "w-1")
+	if err != nil {
+		t.Fatalf("GetWorkIdentifiers: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("expected 0 identifiers, got %d", len(ids))
+	}
+}
+
+func TestGetWorkDirectoryPath(t *testing.T) {
+	db := openTestDB(t)
+	rootID := insertTestRoot(t, db)
+	w := &queries.Work{ID: "w-1", MediaRootID: rootID, DirectoryPath: "Author/Book", Title: "T", SortTitle: "T"}
+	if err := queries.UpsertWork(db, w); err != nil {
+		t.Fatal(err)
+	}
+
+	rootPath, dirPath, err := queries.GetWorkDirectoryPath(db, "w-1")
+	if err != nil {
+		t.Fatalf("GetWorkDirectoryPath: %v", err)
+	}
+	if rootPath != "/media" {
+		t.Errorf("rootPath = %q, want %q", rootPath, "/media")
+	}
+	if dirPath != "Author/Book" {
+		t.Errorf("dirPath = %q, want %q", dirPath, "Author/Book")
+	}
+}
+
+func TestGetWorkDirectoryPath_NotFound(t *testing.T) {
+	db := openTestDB(t)
+	_, _, err := queries.GetWorkDirectoryPath(db, "nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent work")
+	}
+}

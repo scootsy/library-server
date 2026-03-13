@@ -197,7 +197,8 @@ func WriteSidecar(dir string, s *Sidecar, mediaRoot ...string) error {
 
 	sidecarPath := filepath.Join(dir, sidecarFilename)
 	if len(mediaRoot) > 0 {
-		safePath, err := security.SafePath(sidecarPath, mediaRoot...)
+		// Use SafePathParent because the sidecar file may not exist yet.
+		safePath, err := security.SafePathParent(sidecarPath, mediaRoot...)
 		if err != nil {
 			return fmt.Errorf("validating sidecar write path: %w", err)
 		}

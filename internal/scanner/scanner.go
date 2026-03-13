@@ -42,16 +42,28 @@ var audiobookFormats = map[string]bool{
 	"flac": true, "ogg": true, "opus": true,
 }
 
+// OnWorkIndexed is called after a work is successfully indexed into the
+// database. workID is the work's UUID, isNew indicates whether this is a
+// newly discovered work (vs. an update to an existing one).
+type OnWorkIndexed func(workID string, isNew bool)
+
 // Scanner walks a media root directory, detects works, reads or creates
 // sidecars, and indexes everything into the database.
 type Scanner struct {
-	db        *sql.DB
-	mediaRoot *queries.MediaRoot
+	db             *sql.DB
+	mediaRoot      *queries.MediaRoot
+	onWorkIndexed  OnWorkIndexed
 }
 
 // New creates a Scanner for the given media root.
 func New(db *sql.DB, root *queries.MediaRoot) *Scanner {
 	return &Scanner{db: db, mediaRoot: root}
+}
+
+// SetOnWorkIndexed registers a callback that is invoked after each work is
+// indexed. This is used by the metadata engine to auto-enqueue enrichment tasks.
+func (s *Scanner) SetOnWorkIndexed(fn OnWorkIndexed) {
+	s.onWorkIndexed = fn
 }
 
 // Scan walks the media root and indexes all discovered works.
@@ -131,11 +143,18 @@ func (s *Scanner) indexDirectory(absDir, relDir string, mediaFiles []mediaFile) 
 			return fmt.Errorf("reading sidecar: %w", err)
 		}
 
+		isNew := existing == nil
 		workID := uuid.NewString()
 		if existing != nil {
 			workID = existing.ID
 		}
-		return s.indexFromSidecar(workID, relDir, sidecarHash, sc, mediaFiles)
+		if err := s.indexFromSidecar(workID, relDir, sidecarHash, sc, mediaFiles); err != nil {
+			return err
+		}
+		if s.onWorkIndexed != nil {
+			s.onWorkIndexed(workID, isNew)
+		}
+		return nil
 	}
 
 	// No sidecar: extract what we can from the files and create a minimal sidecar.
@@ -162,11 +181,18 @@ func (s *Scanner) indexDirectory(absDir, relDir string, mediaFiles []mediaFile) 
 	if err != nil {
 		return fmt.Errorf("looking up existing work: %w", err)
 	}
+	isNew := existing == nil
 	workID := uuid.NewString()
 	if existing != nil {
 		workID = existing.ID
 	}
-	return s.indexFromSidecar(workID, relDir, sidecarHash, sc, mediaFiles)
+	if err := s.indexFromSidecar(workID, relDir, sidecarHash, sc, mediaFiles); err != nil {
+		return err
+	}
+	if s.onWorkIndexed != nil {
+		s.onWorkIndexed(workID, isNew)
+	}
+	return nil
 }
 
 // indexFromSidecar writes a complete work record (and all related records)
