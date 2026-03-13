@@ -112,11 +112,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract the token to delete the specific session
+	// Extract the token to delete the specific session.
+	// Use the same Bearer-prefix check as auth middleware for consistency.
 	token := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		if len(authHeader) > 7 {
-			token = authHeader[7:]
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 	}
 	if token == "" {

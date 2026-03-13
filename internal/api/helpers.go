@@ -22,13 +22,15 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 // parseIntParam extracts an integer query parameter with a default value.
+// Negative values are clamped to the default to prevent misuse of
+// offset/limit parameters.
 func parseIntParam(r *http.Request, name string, defaultVal int) int {
 	s := r.URL.Query().Get(name)
 	if s == "" {
 		return defaultVal
 	}
 	v, err := strconv.Atoi(s)
-	if err != nil {
+	if err != nil || v < 0 {
 		return defaultVal
 	}
 	return v

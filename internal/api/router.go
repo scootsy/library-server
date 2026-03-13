@@ -46,8 +46,11 @@ func NewRouter(deps *Dependencies) http.Handler {
 	requireAuth := auth.Middleware(deps.DB)
 	requireAdmin := auth.RequireRole("admin")
 
+	// Rate limiter for authentication endpoints: 10 requests per minute per IP.
+	authLimiter := newIPRateLimiter(10, time.Minute)
+
 	// ── Public auth endpoints (no session required) ─────────────────────
-	mux.HandleFunc("POST /api/auth/login", authH.Login)
+	mux.Handle("POST /api/auth/login", rateLimitMiddleware(authLimiter)(http.HandlerFunc(authH.Login)))
 
 	// ── Authenticated routes ────────────────────────────────────────────
 	authed := http.NewServeMux()
@@ -122,6 +125,7 @@ func NewRouter(deps *Dependencies) http.Handler {
 	// Wrap with middleware
 	var handler http.Handler = mux
 	handler = corsMiddleware(deps.Config.Server.BaseURL)(handler)
+	handler = maxBodyMiddleware(1 << 20)(handler) // 1 MB body limit for API requests
 	handler = contentTypeMiddleware(handler)
 	handler = loggingMiddleware(handler)
 	handler = recoveryMiddleware(handler)
@@ -292,6 +296,18 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// maxBodyMiddleware limits the size of incoming request bodies for API routes.
+func maxBodyMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/") && r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
