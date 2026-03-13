@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -70,18 +71,18 @@ func Middleware(db *sql.DB) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractToken(r)
 			if token == "" {
-				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+				writeAuthError(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 
 			session, err := queries.GetSessionByID(db, token)
 			if err != nil {
 				slog.Error("session lookup failed", "error", err)
-				http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+				writeAuthError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if session == nil {
-				http.Error(w, `{"error":"invalid or expired session"}`, http.StatusUnauthorized)
+				writeAuthError(w, http.StatusUnauthorized, "invalid or expired session")
 				return
 			}
 
@@ -89,23 +90,23 @@ func Middleware(db *sql.DB) func(http.Handler) http.Handler {
 			expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
 			if err != nil {
 				slog.Error("invalid session expiry format", "session_id", session.ID, "error", err)
-				http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+				writeAuthError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if time.Now().UTC().After(expiresAt) {
 				_ = queries.DeleteSession(db, session.ID)
-				http.Error(w, `{"error":"session expired"}`, http.StatusUnauthorized)
+				writeAuthError(w, http.StatusUnauthorized, "session expired")
 				return
 			}
 
 			user, err := queries.GetUserByID(db, session.UserID)
 			if err != nil {
 				slog.Error("user lookup failed", "user_id", session.UserID, "error", err)
-				http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+				writeAuthError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
 			if user == nil || !user.IsActive {
-				http.Error(w, `{"error":"account disabled"}`, http.StatusForbidden)
+				writeAuthError(w, http.StatusForbidden, "account disabled")
 				return
 			}
 
@@ -128,16 +129,22 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := UserFromContext(r.Context())
 			if user == nil {
-				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+				writeAuthError(w, http.StatusUnauthorized, "authentication required")
 				return
 			}
 			if !allowed[user.Role] {
-				http.Error(w, `{"error":"insufficient permissions"}`, http.StatusForbidden)
+				writeAuthError(w, http.StatusForbidden, "insufficient permissions")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func writeAuthError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 // extractToken gets the session token from Authorization header or cookie.

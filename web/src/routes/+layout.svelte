@@ -1,13 +1,16 @@
 <script>
 	import { getCurrentUser, logout } from '$lib/api/client.js';
+	import { onMount } from 'svelte';
 
 	let { children } = $props();
 
 	let user = $state(null);
 	let authChecked = $state(false);
 	let isLoginPage = $state(false);
+	let authError = $state('');
+	let redirectedToLogin = $state(false);
 
-	$effect(() => {
+	onMount(() => {
 		isLoginPage = window.location.pathname === '/login';
 
 		if (isLoginPage) {
@@ -20,7 +23,10 @@
 				user = u;
 				authChecked = true;
 			})
-			.catch(() => {
+			.catch((err) => {
+				authError = err?.message || 'authentication required';
+				authChecked = true;
+				redirectedToLogin = true;
 				window.location.href = '/login';
 			});
 	});
@@ -99,6 +105,16 @@
 		<main class="content">
 			{@render children()}
 		</main>
+	</div>
+{:else}
+	<div class="unauthenticated-screen">
+		<p>Authentication required. Redirecting to login…</p>
+		{#if authError}
+			<p class="auth-error">{authError}</p>
+		{/if}
+		{#if redirectedToLogin}
+			<p><a href="/login">Go to login</a></p>
+		{/if}
 	</div>
 {/if}
 
@@ -211,5 +227,19 @@
 		flex: 1;
 		padding: 1.5rem 2rem;
 		overflow-y: auto;
+	}
+
+	.unauthenticated-screen {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 100vh;
+		gap: 0.5rem;
+		color: var(--text-muted);
+	}
+
+	.auth-error {
+		color: var(--danger);
 	}
 </style>
