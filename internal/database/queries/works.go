@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -741,7 +742,9 @@ func SelectCover(db *sql.DB, workID, source string) error {
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			if rbErr := tx.Rollback(); rbErr != nil {
+				slog.Error("failed to rollback cover selection", "work_id", workID, "error", rbErr)
+			}
 		}
 	}()
 
@@ -762,7 +765,10 @@ func SelectCover(db *sql.DB, workID, source string) error {
 		return fmt.Errorf("cover from source %q not found for work %q", source, workID)
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing cover selection: %w", err)
+	}
+	return nil
 }
 
 // GetWorkRatings returns all per-source ratings for a work.

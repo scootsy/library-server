@@ -166,6 +166,31 @@ func UpsertWorkContributor(db *sql.DB, workID, contributorID, role string, posit
 	return nil
 }
 
+// GetWorkAuthorNames returns the names of all authors for a work, ordered by position.
+func GetWorkAuthorNames(db *sql.DB, workID string) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT c.name
+		FROM work_contributors wc
+		JOIN contributors c ON c.id = wc.contributor_id
+		WHERE wc.work_id = ? AND wc.role = 'author'
+		ORDER BY wc.position
+	`, workID)
+	if err != nil {
+		return nil, fmt.Errorf("querying authors for work %q: %w", workID, err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scanning author name: %w", err)
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 // DeleteWorkContributors removes all contributor links for a work.
 // Called before re-inserting updated contributor data.
 func DeleteWorkContributors(db *sql.DB, workID string) error {

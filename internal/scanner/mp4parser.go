@@ -272,12 +272,15 @@ func (p *mp4Parser) walkAtoms(start, end int64, fn func(string, []byte) error) e
 		if payloadSize > 0 {
 			if payloadSize > 64*1024*1024 { // skip atoms > 64 MB
 				if _, err := p.r.Seek(payloadSize, io.SeekCurrent); err != nil {
-					return nil
+					return fmt.Errorf("seeking past %q atom (%d bytes): %w", name, payloadSize, err)
 				}
 			} else {
 				payload = make([]byte, payloadSize)
 				if _, err := io.ReadFull(p.r, payload); err != nil {
-					return nil
+					if err == io.EOF || err == io.ErrUnexpectedEOF {
+						return nil // truncated file, stop gracefully
+					}
+					return fmt.Errorf("reading %q atom payload: %w", name, err)
 				}
 			}
 		}
