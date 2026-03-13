@@ -22,12 +22,14 @@ type Audnexus struct {
 	httpClient *http.Client
 }
 
-// NewAudnexus returns an Audnexus source.
-func NewAudnexus() *Audnexus {
+// NewAudnexus returns an Audnexus source. If httpClient is nil,
+// a default client with a 15-second timeout is used.
+func NewAudnexus(httpClient *http.Client) *Audnexus {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 15 * time.Second}
+	}
 	return &Audnexus{
-		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
-		},
+		httpClient: httpClient,
 	}
 }
 
@@ -195,7 +197,9 @@ func (a *Audnexus) bookToCandidate(b audnexusBook) Candidate {
 	for _, s := range b.SeriesPrimary {
 		pos := 0.0
 		if s.Position != "" {
-			fmt.Sscanf(s.Position, "%f", &pos)
+			if _, err := fmt.Sscanf(s.Position, "%f", &pos); err != nil {
+				slog.Debug("failed to parse series position", "position", s.Position, "error", err)
+			}
 		}
 		c.Series = append(c.Series, Series{Name: s.Name, Position: pos})
 	}

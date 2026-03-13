@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -102,6 +104,8 @@ func Load(path string) (*Config, error) {
 	cfg := defaults()
 
 	if path != "" {
+		checkConfigFilePermissions(path)
+
 		data, err := os.ReadFile(path)
 		if err != nil && !os.IsNotExist(err) {
 			return nil, fmt.Errorf("reading config file %q: %w", path, err)
@@ -115,7 +119,66 @@ func Load(path string) (*Config, error) {
 
 	applyEnvOverrides(cfg)
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation: %w", err)
+	}
+
 	return cfg, nil
+}
+
+// checkConfigFilePermissions warns if the config file has overly permissive
+// permissions (more open than 0600).
+func checkConfigFilePermissions(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return // file may not exist yet; Load handles that
+	}
+	mode := info.Mode().Perm()
+	if mode&0077 != 0 {
+		slog.Warn("config file has overly permissive permissions",
+			"path", path,
+			"mode", fmt.Sprintf("%04o", mode),
+			"recommended", "0600")
+	}
+}
+
+// Validate checks config invariants and returns an error if any are violated.
+func (c *Config) Validate() error {
+	if c.Database.Path == "" {
+		return fmt.Errorf("database path must not be empty")
+	}
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("server port must be between 1 and 65535, got %d", c.Server.Port)
+	}
+	if c.Metadata.ConfidenceAutoApply < 0 || c.Metadata.ConfidenceAutoApply > 1 {
+		return fmt.Errorf("confidence_auto_apply must be between 0 and 1, got %f", c.Metadata.ConfidenceAutoApply)
+	}
+	if c.Metadata.ConfidenceMinMatch < 0 || c.Metadata.ConfidenceMinMatch > 1 {
+		return fmt.Errorf("confidence_min_match must be between 0 and 1, got %f", c.Metadata.ConfidenceMinMatch)
+	}
+	// Check for overlapping media root paths
+	for i, r1 := range c.Media.Roots {
+		if r1.Path == "" {
+			return fmt.Errorf("media root %d: path must not be empty", i)
+		}
+		abs1, err := filepath.Abs(r1.Path)
+		if err != nil {
+			continue
+		}
+		for j, r2 := range c.Media.Roots {
+			if i == j {
+				continue
+			}
+			abs2, err := filepath.Abs(r2.Path)
+			if err != nil {
+				continue
+			}
+			if strings.HasPrefix(abs1+"/", abs2+"/") || strings.HasPrefix(abs2+"/", abs1+"/") {
+				return fmt.Errorf("media roots %q and %q overlap", r1.Path, r2.Path)
+			}
+		}
+	}
+	return nil
 }
 
 func defaults() *Config {
@@ -155,7 +218,10 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Server.Host = v
 	}
 	if v := os.Getenv("CODEX_PORT"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+		p, err := strconv.Atoi(v)
+		if err != nil || p <= 0 {
+			slog.Warn("invalid CODEX_PORT env var, using default", "value", v)
+		} else {
 			cfg.Server.Port = p
 		}
 	}

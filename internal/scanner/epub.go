@@ -272,13 +272,14 @@ func opfToMeta(pkg *opfPackage) *EPUBMeta {
 	}
 
 	// Apply OPF3 refinements for role and file-as
+	refs := buildCreatorIDMap(m, md.Creators, md.Contributors)
 	for _, meta := range md.Metas {
 		refID := strings.TrimPrefix(meta.Refines, "#")
 		switch meta.Property {
 		case "role":
-			applyRoleRefinement(m, refID, meta.Value)
+			applyRoleRefinement(m, refs, refID, meta.Value)
 		case "file-as":
-			applyFileAsRefinement(m, refID, meta.Value)
+			applyFileAsRefinement(m, refs, refID, meta.Value)
 		}
 	}
 
@@ -362,23 +363,66 @@ func normalizeRole(role string) string {
 	}
 }
 
-func applyRoleRefinement(m *EPUBMeta, id, role string) {
+// creatorIDMap builds a mapping from OPF3 creator ID to the corresponding
+// index and list (Authors or Narrators) in EPUBMeta, so refinements can
+// be applied by reference.
+type creatorRef struct {
+	list  *[]EPUBContributor
+	index int
+}
+
+func buildCreatorIDMap(m *EPUBMeta, creators []opfCreator, contributors []opfCreator) map[string]creatorRef {
+	refs := make(map[string]creatorRef)
+	authorIdx := 0
+	narratorIdx := 0
+	for _, c := range append(creators, contributors...) {
+		if c.ID == "" {
+			role := normalizeRole(c.Role)
+			if role == "narrator" {
+				narratorIdx++
+			} else {
+				authorIdx++
+			}
+			continue
+		}
+		role := normalizeRole(c.Role)
+		if role == "narrator" {
+			refs[c.ID] = creatorRef{list: &m.Narrators, index: narratorIdx}
+			narratorIdx++
+		} else {
+			refs[c.ID] = creatorRef{list: &m.Authors, index: authorIdx}
+			authorIdx++
+		}
+	}
+	return refs
+}
+
+func applyRoleRefinement(m *EPUBMeta, refs map[string]creatorRef, id, role string) {
+	ref, ok := refs[id]
+	if !ok || ref.index >= len(*ref.list) {
+		return
+	}
 	norm := normalizeRole(role)
-	for i, a := range m.Authors {
-		_ = a
-		// match by creator index if ID format is "#creator01"
-		_ = id
-		_ = norm
-		_ = i
+	contributor := (*ref.list)[ref.index]
+
+	// Remove from current list
+	*ref.list = append((*ref.list)[:ref.index], (*ref.list)[ref.index+1:]...)
+
+	contributor.Role = norm
+	// Add to correct list based on new role
+	if norm == "narrator" {
+		m.Narrators = append(m.Narrators, contributor)
+	} else {
+		m.Authors = append(m.Authors, contributor)
 	}
 }
 
-func applyFileAsRefinement(m *EPUBMeta, id, fileAs string) {
-	for i := range m.Authors {
-		if m.Authors[i].Role == id {
-			m.Authors[i].SortName = fileAs
-		}
+func applyFileAsRefinement(m *EPUBMeta, refs map[string]creatorRef, id, fileAs string) {
+	ref, ok := refs[id]
+	if !ok || ref.index >= len(*ref.list) {
+		return
 	}
+	(*ref.list)[ref.index].SortName = fileAs
 }
 
 func deriveSortName(name string) string {

@@ -155,9 +155,16 @@ type SidecarMeta struct {
 }
 
 // ReadSidecar reads and parses the metadata.json in dir.
-// dir must be an absolute path that has already been validated by SafePath.
-func ReadSidecar(dir string) (*Sidecar, error) {
+// mediaRoot is used to validate that the path stays within the allowed root.
+func ReadSidecar(dir string, mediaRoot ...string) (*Sidecar, error) {
 	sidecarPath := filepath.Join(dir, sidecarFilename)
+	if len(mediaRoot) > 0 {
+		safePath, err := security.SafePath(sidecarPath, mediaRoot...)
+		if err != nil {
+			return nil, fmt.Errorf("validating sidecar read path: %w", err)
+		}
+		sidecarPath = safePath
+	}
 	data, err := os.ReadFile(sidecarPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading sidecar at %q: %w", sidecarPath, err)
@@ -172,8 +179,8 @@ func ReadSidecar(dir string) (*Sidecar, error) {
 
 // WriteSidecar serializes s to metadata.json in dir, creating the file if
 // necessary. It writes to a temp file first, then renames atomically.
-// dir must be an absolute path that has already been validated by SafePath.
-func WriteSidecar(dir string, s *Sidecar) error {
+// mediaRoot is used to validate that the path stays within the allowed root.
+func WriteSidecar(dir string, s *Sidecar, mediaRoot ...string) error {
 	if s.SchemaVersion == 0 {
 		s.SchemaVersion = schemaVersion
 	}
@@ -189,13 +196,22 @@ func WriteSidecar(dir string, s *Sidecar) error {
 	}
 
 	sidecarPath := filepath.Join(dir, sidecarFilename)
+	if len(mediaRoot) > 0 {
+		safePath, err := security.SafePath(sidecarPath, mediaRoot...)
+		if err != nil {
+			return fmt.Errorf("validating sidecar write path: %w", err)
+		}
+		sidecarPath = safePath
+	}
 	tmpPath := sidecarPath + ".tmp"
 
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("writing sidecar temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, sidecarPath); err != nil {
-		_ = os.Remove(tmpPath)
+		if removeErr := os.Remove(tmpPath); removeErr != nil {
+			slog.Warn("failed to clean up sidecar temp file", "path", tmpPath, "error", removeErr)
+		}
 		return fmt.Errorf("renaming sidecar temp file: %w", err)
 	}
 

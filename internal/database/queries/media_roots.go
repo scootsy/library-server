@@ -70,8 +70,8 @@ func ListMediaRoots(db *sql.DB) ([]*MediaRoot, error) {
 		if err := rows.Scan(&r.ID, &r.Name, &r.RootPath, &r.ScanConfig, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scanning media root row: %w", err)
 		}
-		r.CreatedAt, _ = time.Parse(time.DateTime, createdAt)
-		r.UpdatedAt, _ = time.Parse(time.DateTime, updatedAt)
+		r.CreatedAt = parseDBTime(createdAt)
+		r.UpdatedAt = parseDBTime(updatedAt)
 		roots = append(roots, &r)
 	}
 	return roots, rows.Err()
@@ -87,7 +87,7 @@ func scanMediaRoot(row *sql.Row) (*MediaRoot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scanning media root: %w", err)
 	}
-	r.CreatedAt, _ = time.Parse(time.DateTime, createdAt)
-	r.UpdatedAt, _ = time.Parse(time.DateTime, updatedAt)
+	r.CreatedAt = parseDBTime(createdAt)
+	r.UpdatedAt = parseDBTime(updatedAt)
 	return &r, nil
 }

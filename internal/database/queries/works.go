@@ -234,38 +234,8 @@ func scanWork(row *sql.Row) (*Work, error) {
 	w.IsAbridged = isAbridged != 0
 	w.HasMediaOverlay = hasMediaOverlay != 0
 	w.NeedsReview = needsReview != 0
-	w.AddedAt, _ = time.Parse(time.DateTime, addedAt)
-	w.UpdatedAt, _ = time.Parse(time.DateTime, updatedAt)
-	w.LastScannedAt, _ = time.Parse(time.DateTime, lastScannedAt)
+	w.AddedAt = parseDBTime(addedAt)
+	w.UpdatedAt = parseDBTime(updatedAt)
+	w.LastScannedAt = parseDBTime(lastScannedAt)
 	return &w, nil
-}
-
-// helpers for nullable SQL values
-
-func nullableString(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func nullableInt(n int) any {
-	if n == 0 {
-		return nil
-	}
-	return n
-}
-
-func nullableFloat(f float64) any {
-	if f == 0 {
-		return nil
-	}
-	return f
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
