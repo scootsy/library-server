@@ -10,11 +10,14 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/scootsy/library-server/internal/config"
 	"github.com/scootsy/library-server/internal/database"
 	"github.com/scootsy/library-server/internal/database/queries"
+	"github.com/scootsy/library-server/internal/metadata"
+	"github.com/scootsy/library-server/internal/metadata/sources"
 	"github.com/scootsy/library-server/internal/scanner"
 	"github.com/scootsy/library-server/internal/server"
 )
@@ -62,14 +65,20 @@ func run() int {
 		return 1
 	}
 
+	// ── Metadata engine ──────────────────────────────────────────────────────
+	engine := initMetadataEngine(db, cfg)
+
 	// ── Scan mode ────────────────────────────────────────────────────────────
 	if *scanOnly {
-		if err := runScan(db, cfg); err != nil {
+		if err := runScan(db, cfg, engine); err != nil {
 			slog.Error("scan failed", "error", err)
 			return 1
 		}
 		return 0
 	}
+
+	// ── Start metadata engine background worker ─────────────────────────────
+	engine.Start(30 * time.Second)
 
 	// ── HTTP server ──────────────────────────────────────────────────────────
 	srv := server.New(cfg)
@@ -79,9 +88,11 @@ func run() int {
 
 	if err := srv.Start(ctx); err != nil {
 		slog.Error("server error", "error", err)
+		engine.Stop()
 		return 1
 	}
 
+	engine.Stop()
 	slog.Info("codex stopped")
 	return 0
 }
@@ -104,8 +115,31 @@ func ensureMediaRoots(db *sql.DB, cfg *config.Config) error {
 	return nil
 }
 
-// runScan scans all configured media roots.
-func runScan(db *sql.DB, cfg *config.Config) error {
+// initMetadataEngine builds and returns a metadata engine with all enabled
+// sources configured.
+func initMetadataEngine(db *sql.DB, cfg *config.Config) *metadata.Engine {
+	var srcs []sources.MetadataSource
+	if cfg.Metadata.GoogleBooks.Enabled {
+		srcs = append(srcs, sources.NewGoogleBooks(cfg.Metadata.GoogleBooks.APIKey, nil))
+	}
+	if cfg.Metadata.OpenLibrary.Enabled {
+		srcs = append(srcs, sources.NewOpenLibrary(nil))
+	}
+	if cfg.Metadata.Audnexus.Enabled {
+		srcs = append(srcs, sources.NewAudnexus(nil))
+	}
+
+	engine := metadata.NewEngine(db, &cfg.Metadata, srcs)
+	slog.Info("metadata engine initialized",
+		"sources", len(srcs),
+		"auto_enrich", cfg.Metadata.AutoEnrich)
+	return engine
+}
+
+// runScan scans all configured media roots. When the metadata engine has
+// auto-enrich enabled, newly discovered works are automatically queued for
+// metadata enrichment.
+func runScan(db *sql.DB, cfg *config.Config, engine *metadata.Engine) error {
 	for _, root := range cfg.Media.Roots {
 		mediaRoot, err := queries.GetMediaRootByPath(db, root.Path)
 		if err != nil {
@@ -116,6 +150,15 @@ func runScan(db *sql.DB, cfg *config.Config) error {
 			continue
 		}
 		s := scanner.New(db, mediaRoot)
+		s.SetOnWorkIndexed(func(workID string, isNew bool) {
+			if !isNew {
+				return
+			}
+			if err := engine.EnqueueWork(workID, "auto_match", 0); err != nil {
+				slog.Warn("failed to enqueue metadata task",
+					"work_id", workID, "error", err)
+			}
+		})
 		if err := s.Scan(); err != nil {
 			return fmt.Errorf("scanning %q: %w", root.Path, err)
 		}

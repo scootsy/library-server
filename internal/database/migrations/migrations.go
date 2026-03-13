@@ -18,6 +18,7 @@ type migration struct {
 // all migrations in ascending version order.
 var all = []migration{
 	{version: 1, apply: v1},
+	{version: 2, apply: v2},
 }
 
 // Run executes any pending migrations against db.
@@ -406,6 +407,20 @@ func v1(tx *sql.Tx) error {
 		)`,
 	}
 
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("executing statement %q: %w", stmt[:min(60, len(stmt))], err)
+		}
+	}
+	return nil
+}
+
+// v2 adds the unique constraint on metadata_tasks(work_id, task_type) needed
+// by the EnqueueMetadataTask ON CONFLICT clause to prevent duplicate tasks.
+func v2(tx *sql.Tx) error {
+	stmts := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_work_type ON metadata_tasks(work_id, task_type)`,
+	}
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("executing statement %q: %w", stmt[:min(60, len(stmt))], err)
