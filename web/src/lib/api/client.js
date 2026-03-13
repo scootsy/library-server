@@ -20,6 +20,56 @@ async function request(path, options = {}) {
 	return res.json();
 }
 
+// ── Auth ────────────────────────────────────────────────────────────────────
+export function login(username, password) {
+	return request('/auth/login', {
+		method: 'POST',
+		body: JSON.stringify({ username, password })
+	});
+}
+
+export function logout() {
+	return request('/auth/logout', { method: 'POST' });
+}
+
+export function getCurrentUser() {
+	return request('/auth/me');
+}
+
+export function changePassword(currentPassword, newPassword) {
+	return request('/auth/password', {
+		method: 'PUT',
+		body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+	});
+}
+
+// ── Admin: Users ────────────────────────────────────────────────────────────
+export function listUsers() {
+	return request('/admin/users');
+}
+
+export function getUser(id) {
+	return request(`/admin/users/${id}`);
+}
+
+export function createUser(data) {
+	return request('/admin/users', {
+		method: 'POST',
+		body: JSON.stringify(data)
+	});
+}
+
+export function updateUser(id, data) {
+	return request(`/admin/users/${id}`, {
+		method: 'PUT',
+		body: JSON.stringify(data)
+	});
+}
+
+export function deleteUser(id) {
+	return request(`/admin/users/${id}`, { method: 'DELETE' });
+}
+
 // ── Dashboard ───────────────────────────────────────────────────────────────
 export function getDashboard() {
 	return request('/dashboard');
