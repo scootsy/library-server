@@ -66,7 +66,9 @@ func applyMigration(db *sql.DB, m migration) error {
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			if rbErr := tx.Rollback(); rbErr != nil {
+				slog.Error("failed to rollback migration", "version", m.version, "error", rbErr)
+			}
 		}
 	}()
 
@@ -79,7 +81,10 @@ func applyMigration(db *sql.DB, m migration) error {
 		return fmt.Errorf("recording version: %w", err)
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing migration v%d: %w", m.version, err)
+	}
+	return nil
 }
 
 // v1 creates the initial schema.

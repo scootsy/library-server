@@ -3,9 +3,11 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/scootsy/library-server/internal/config"
@@ -101,6 +103,7 @@ type ScanManager struct {
 	db      *sql.DB
 	config  *config.Config
 	engine  *metadata.Engine
+	mu      sync.RWMutex
 	running bool
 	lastErr error
 	lastRun time.Time
@@ -112,24 +115,42 @@ func NewScanManager(db *sql.DB, cfg *config.Config, engine *metadata.Engine) *Sc
 }
 
 // IsRunning returns whether a scan is currently in progress.
-func (sm *ScanManager) IsRunning() bool { return sm.running }
+func (sm *ScanManager) IsRunning() bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.running
+}
 
 // LastRun returns the time of the last completed scan.
-func (sm *ScanManager) LastRun() time.Time { return sm.lastRun }
+func (sm *ScanManager) LastRun() time.Time {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.lastRun
+}
 
 // LastError returns the last scan error, if any.
-func (sm *ScanManager) LastError() error { return sm.lastErr }
+func (sm *ScanManager) LastError() error {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.lastErr
+}
 
 // RunScan executes a full library scan in the background.
 func (sm *ScanManager) RunScan() {
+	sm.mu.Lock()
 	if sm.running {
+		sm.mu.Unlock()
 		return
 	}
 	sm.running = true
+	sm.mu.Unlock()
+
 	go func() {
 		defer func() {
+			sm.mu.Lock()
 			sm.running = false
 			sm.lastRun = time.Now()
+			sm.mu.Unlock()
 		}()
 
 		for _, root := range sm.config.Media.Roots {
@@ -149,11 +170,15 @@ func (sm *ScanManager) RunScan() {
 			})
 			if err := s.Scan(); err != nil {
 				slog.Error("scan failed", "path", root.Path, "error", err)
+				sm.mu.Lock()
 				sm.lastErr = err
+				sm.mu.Unlock()
 				return
 			}
 		}
+		sm.mu.Lock()
 		sm.lastErr = nil
+		sm.mu.Unlock()
 		slog.Info("library scan completed")
 	}()
 }
@@ -169,7 +194,8 @@ func corsMiddleware(baseURL string) func(http.Handler) http.Handler {
 	// Extract origin from base URL.
 	origin := baseURL
 	if origin == "" {
-		origin = "*"
+		// Refuse to allow wildcard CORS; fall back to rejecting cross-origin.
+		slog.Warn("server.base_url is not configured; CORS will reject cross-origin requests")
 	}
 	// Strip trailing path from base URL to get just the origin.
 	if idx := strings.Index(origin, "://"); idx != -1 {
@@ -181,10 +207,12 @@ func corsMiddleware(baseURL string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Max-Age", "86400")
+			if origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				w.Header().Set("Access-Control-Max-Age", "86400")
+			}
 
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
@@ -221,9 +249,13 @@ func loggingMiddleware(next http.Handler) http.Handler {
 func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if err := recover(); err != nil {
-				slog.Error("panic recovered in HTTP handler", "error", err, "path", r.URL.Path)
-				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered in HTTP handler",
+					"panic", fmt.Sprintf("%v", rec),
+					"path", r.URL.Path)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{
+					"error": "internal server error",
+				})
 			}
 		}()
 		next.ServeHTTP(w, r)

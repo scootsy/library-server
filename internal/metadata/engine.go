@@ -5,10 +5,13 @@ package metadata
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -276,7 +279,7 @@ func (e *Engine) buildQuery(workID string) (*sources.Query, error) {
 	}
 
 	// Get primary author
-	authors, err := e.getWorkAuthors(workID)
+	authors, err := queries.GetWorkAuthorNames(e.db, workID)
 	if err != nil {
 		slog.Warn("failed to fetch authors for query", "work_id", workID, "error", err)
 	} else if len(authors) > 0 {
@@ -301,31 +304,6 @@ func (e *Engine) buildQuery(workID string) (*sources.Query, error) {
 	return q, nil
 }
 
-// getWorkAuthors returns the names of all authors linked to a work.
-func (e *Engine) getWorkAuthors(workID string) ([]string, error) {
-	rows, err := e.db.Query(`
-		SELECT c.name
-		FROM work_contributors wc
-		JOIN contributors c ON c.id = wc.contributor_id
-		WHERE wc.work_id = ? AND wc.role = 'author'
-		ORDER BY wc.position
-	`, workID)
-	if err != nil {
-		return nil, fmt.Errorf("querying authors: %w", err)
-	}
-	defer rows.Close()
-
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("scanning author name: %w", err)
-		}
-		names = append(names, name)
-	}
-	return names, rows.Err()
-}
-
 // ApplyCandidate applies a specific scored candidate to a work's sidecar.
 // This is the public entry point for manual selection from the review queue.
 func (e *Engine) ApplyCandidate(workID string, candidate ScoredCandidate) error {
@@ -340,7 +318,7 @@ func (e *Engine) applyCandidate(workID string, sc ScoredCandidate) error {
 		return fmt.Errorf("getting work directory: %w", err)
 	}
 
-	absDir := rootPath + "/" + dirPath
+	absDir := filepath.Join(rootPath, dirPath)
 
 	if err := e.writer.MergeAndWrite(absDir, rootPath, sc); err != nil {
 		return fmt.Errorf("merge and write sidecar: %w", err)
@@ -375,9 +353,13 @@ func (e *Engine) PurgeExpiredCache() (int64, error) {
 	return queries.PurgeExpiredSourceCache(e.db, e.cfg.SourceCacheRetentionDays)
 }
 
-// generateTaskID creates a unique task identifier using a UUID.
+// generateTaskID creates a unique task identifier with a timestamp prefix
+// for rough ordering and a cryptographic random suffix for uniqueness.
 func generateTaskID() string {
-	// Use timestamp prefix for rough ordering + random suffix for uniqueness.
-	// Format: "mt_<unix_ms>_<random>"
-	return fmt.Sprintf("mt_%d", time.Now().UnixMilli())
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: timestamp-only (still unique per ON CONFLICT in DB)
+		return fmt.Sprintf("mt_%d", time.Now().UnixMilli())
+	}
+	return fmt.Sprintf("mt_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b))
 }

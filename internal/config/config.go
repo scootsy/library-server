@@ -156,14 +156,19 @@ func (c *Config) Validate() error {
 	if c.Metadata.ConfidenceMinMatch < 0 || c.Metadata.ConfidenceMinMatch > 1 {
 		return fmt.Errorf("confidence_min_match must be between 0 and 1, got %f", c.Metadata.ConfidenceMinMatch)
 	}
+	if c.Metadata.ConfidenceMinMatch > c.Metadata.ConfidenceAutoApply {
+		return fmt.Errorf("confidence_min_match (%f) must not exceed confidence_auto_apply (%f)",
+			c.Metadata.ConfidenceMinMatch, c.Metadata.ConfidenceAutoApply)
+	}
 	// Check for overlapping media root paths
+	sep := string(filepath.Separator)
 	for i, r1 := range c.Media.Roots {
 		if r1.Path == "" {
 			return fmt.Errorf("media root %d: path must not be empty", i)
 		}
 		abs1, err := filepath.Abs(r1.Path)
 		if err != nil {
-			continue
+			return fmt.Errorf("media root %d: cannot resolve path %q: %w", i, r1.Path, err)
 		}
 		for j, r2 := range c.Media.Roots {
 			if i == j {
@@ -171,9 +176,9 @@ func (c *Config) Validate() error {
 			}
 			abs2, err := filepath.Abs(r2.Path)
 			if err != nil {
-				continue
+				return fmt.Errorf("media root %d: cannot resolve path %q: %w", j, r2.Path, err)
 			}
-			if strings.HasPrefix(abs1+"/", abs2+"/") || strings.HasPrefix(abs2+"/", abs1+"/") {
+			if strings.HasPrefix(abs1+sep, abs2+sep) || strings.HasPrefix(abs2+sep, abs1+sep) {
 				return fmt.Errorf("media roots %q and %q overlap", r1.Path, r2.Path)
 			}
 		}

@@ -3,6 +3,7 @@ package queries
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -45,7 +46,9 @@ func DequeueMetadataTask(db *sql.DB) (*MetadataTask, error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			if rbErr := tx.Rollback(); rbErr != nil {
+				slog.Error("failed to rollback dequeue transaction", "error", rbErr)
+			}
 		}
 	}()
 
