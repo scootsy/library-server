@@ -164,6 +164,33 @@ func TestMergeCandidateIntoSidecar_IdentifiersMergeOnly(t *testing.T) {
 	}
 }
 
+func TestMergeCandidateIntoSidecar_RatingsBySource(t *testing.T) {
+	sc := &scanner.Sidecar{SchemaVersion: 1}
+
+	c := sources.Candidate{
+		Source: "hardcover",
+		Rating: &sources.Rating{
+			Score:     4.7,
+			Max:       5,
+			Count:     1520,
+			FetchedAt: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	mergeCandidateIntoSidecar(sc, c, map[string]bool{})
+
+	if sc.Ratings == nil {
+		t.Fatal("expected ratings to be initialized")
+	}
+	rating := sc.Ratings["hardcover"]
+	if rating == nil {
+		t.Fatal("expected hardcover rating entry")
+	}
+	if rating.Score != 4.7 || rating.Max != 5 || rating.Count != 1520 {
+		t.Errorf("rating = %+v, want score 4.7 max 5 count 1520", rating)
+	}
+}
+
 func TestMergeCandidateIntoSidecar_SortTitleDerivation(t *testing.T) {
 	sc := &scanner.Sidecar{SchemaVersion: 1}
 

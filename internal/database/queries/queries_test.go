@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/scootsy/library-server/internal/database/migrations"
@@ -317,5 +318,54 @@ func TestGetWorkDirectoryPath_NotFound(t *testing.T) {
 	_, _, err := queries.GetWorkDirectoryPath(db, "nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent work")
+	}
+}
+
+func TestUpsertAndDeleteWorkRatings(t *testing.T) {
+	db := openTestDB(t)
+	rootID := insertTestRoot(t, db)
+	work := &queries.Work{
+		ID:            "w-ratings",
+		MediaRootID:   rootID,
+		DirectoryPath: "ratings",
+		Title:         "Ratings",
+		SortTitle:     "Ratings",
+	}
+	if err := queries.UpsertWork(db, work); err != nil {
+		t.Fatal(err)
+	}
+
+	err := queries.UpsertWorkRating(db, &queries.Rating{
+		WorkID:    "w-ratings",
+		Source:    "hardcover",
+		Score:     4.7,
+		MaxScore:  5,
+		Count:     1500,
+		FetchedAt: time.Date(2026, 3, 13, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("UpsertWorkRating: %v", err)
+	}
+
+	ratings, err := queries.GetWorkRatings(db, "w-ratings")
+	if err != nil {
+		t.Fatalf("GetWorkRatings: %v", err)
+	}
+	if len(ratings) != 1 {
+		t.Fatalf("len(ratings) = %d, want 1", len(ratings))
+	}
+	if ratings[0].Source != "hardcover" || ratings[0].Score != 4.7 || ratings[0].Count != 1500 {
+		t.Errorf("ratings[0] = %+v, want hardcover 4.7 count 1500", ratings[0])
+	}
+
+	if err := queries.DeleteWorkRatings(db, "w-ratings"); err != nil {
+		t.Fatalf("DeleteWorkRatings: %v", err)
+	}
+	ratings, err = queries.GetWorkRatings(db, "w-ratings")
+	if err != nil {
+		t.Fatalf("GetWorkRatings after delete: %v", err)
+	}
+	if len(ratings) != 0 {
+		t.Fatalf("len(ratings) after delete = %d, want 0", len(ratings))
 	}
 }

@@ -56,6 +56,7 @@ type Candidate struct {
 	Description   string
 	PageCount     int
 	DurationSecs  int               // audiobooks only
+	Rating        *Rating
 	Identifiers   map[string]string // isbn_13, isbn_10, asin, olid, …
 	Series        []Series
 	Tags          []string // genre / subject tags
@@ -78,6 +79,14 @@ type Contributor struct {
 type Series struct {
 	Name     string
 	Position float64 // 0 = unknown/not applicable
+}
+
+// Rating is a per-source aggregate rating for a candidate.
+type Rating struct {
+	Score     float64
+	Max       float64
+	Count     int
+	FetchedAt time.Time
 }
 
 // sanitizeURL strips query parameters that may contain secrets (key, api_key, token)

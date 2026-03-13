@@ -405,6 +405,26 @@ func (s *Scanner) indexFromSidecar(workID, relDir, sidecarHash string, sc *Sidec
 		}
 	}
 
+	// Ratings
+	if err := queries.DeleteWorkRatings(s.db, workID); err != nil {
+		return err
+	}
+	for source, rating := range sc.Ratings {
+		if rating == nil {
+			continue
+		}
+		if err := queries.UpsertWorkRating(s.db, &queries.Rating{
+			WorkID:    workID,
+			Source:    source,
+			Score:     rating.Score,
+			MaxScore:  rating.Max,
+			Count:     rating.Count,
+			FetchedAt: rating.FetchedAt,
+		}); err != nil {
+			return fmt.Errorf("upserting rating %q: %w", source, err)
+		}
+	}
+
 	// Update FTS denormalized fields
 	if err := queries.UpdateFTSDenormalized(s.db, workID); err != nil {
 		slog.Warn("FTS update failed", "work_id", workID, "error", err)

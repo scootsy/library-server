@@ -82,6 +82,9 @@ type MetadataConfig struct {
 	// GoogleBooks holds Google Books API settings.
 	GoogleBooks GoogleBooksConfig `yaml:"google_books"`
 
+	// Hardcover holds Hardcover GraphQL API settings.
+	Hardcover HardcoverConfig `yaml:"hardcover"`
+
 	// OpenLibrary holds Open Library settings (no auth required).
 	OpenLibrary OpenLibraryConfig `yaml:"open_library"`
 
@@ -93,21 +96,42 @@ type MetadataConfig struct {
 type GoogleBooksConfig struct {
 	// Enabled controls whether this source is used. Default: true.
 	Enabled bool `yaml:"enabled"`
+	// Priority controls tie-breaking when multiple sources score equally.
+	// Lower numbers are preferred. Default: 10.
+	Priority int `yaml:"priority"`
 	// APIKey is optional; omitting it uses anonymous quota (lower rate limit).
 	// Load from environment variable CODEX_GOOGLE_BOOKS_API_KEY.
 	APIKey string `yaml:"-"` // never read from config file; env-var only
+}
+
+// HardcoverConfig holds Hardcover GraphQL API settings.
+type HardcoverConfig struct {
+	// Enabled controls whether this source is used. Default: false.
+	Enabled bool `yaml:"enabled"`
+	// APIKey authenticates requests to Hardcover. It may be set in config.yaml
+	// or via CODEX_HARDCOVER_API_KEY.
+	APIKey string `yaml:"api_key"`
+	// Priority controls tie-breaking when multiple sources score equally.
+	// Lower numbers are preferred. Default: 20.
+	Priority int `yaml:"priority"`
 }
 
 // OpenLibraryConfig holds Open Library settings.
 type OpenLibraryConfig struct {
 	// Enabled controls whether this source is used. Default: true.
 	Enabled bool `yaml:"enabled"`
+	// Priority controls tie-breaking when multiple sources score equally.
+	// Lower numbers are preferred. Default: 30.
+	Priority int `yaml:"priority"`
 }
 
 // AudnexusConfig holds Audnexus settings.
 type AudnexusConfig struct {
 	// Enabled controls whether this source is used. Default: true.
 	Enabled bool `yaml:"enabled"`
+	// Priority controls tie-breaking when multiple sources score equally.
+	// Lower numbers are preferred. Default: 40.
+	Priority int `yaml:"priority"`
 }
 
 // Load reads a config file at path (optional) and applies environment
@@ -172,6 +196,18 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("confidence_min_match (%f) must not exceed confidence_auto_apply (%f)",
 			c.Metadata.ConfidenceMinMatch, c.Metadata.ConfidenceAutoApply)
 	}
+	if c.Metadata.GoogleBooks.Priority <= 0 {
+		return fmt.Errorf("metadata.google_books.priority must be greater than 0")
+	}
+	if c.Metadata.Hardcover.Priority <= 0 {
+		return fmt.Errorf("metadata.hardcover.priority must be greater than 0")
+	}
+	if c.Metadata.OpenLibrary.Priority <= 0 {
+		return fmt.Errorf("metadata.open_library.priority must be greater than 0")
+	}
+	if c.Metadata.Audnexus.Priority <= 0 {
+		return fmt.Errorf("metadata.audnexus.priority must be greater than 0")
+	}
 	// Check for overlapping media root paths
 	sep := string(filepath.Separator)
 	for i, r1 := range c.Media.Roots {
@@ -222,13 +258,20 @@ func defaults() *Config {
 			ConfidenceMinMatch:       0.50,
 			SourceCacheRetentionDays: 90,
 			GoogleBooks: GoogleBooksConfig{
-				Enabled: true,
+				Enabled:  true,
+				Priority: 10,
+			},
+			Hardcover: HardcoverConfig{
+				Enabled:  false,
+				Priority: 20,
 			},
 			OpenLibrary: OpenLibraryConfig{
-				Enabled: true,
+				Enabled:  true,
+				Priority: 30,
 			},
 			Audnexus: AudnexusConfig{
-				Enabled: true,
+				Enabled:  true,
+				Priority: 40,
 			},
 		},
 	}
@@ -258,9 +301,12 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("CODEX_LOG_FORMAT"); v != "" {
 		cfg.Log.Format = strings.ToLower(v)
 	}
-	// Metadata API keys are NEVER read from config files — env-var only.
+	// Google Books uses env-var only; Hardcover can be set in config or env.
 	if v := os.Getenv("CODEX_GOOGLE_BOOKS_API_KEY"); v != "" {
 		cfg.Metadata.GoogleBooks.APIKey = v
+	}
+	if v := os.Getenv("CODEX_HARDCOVER_API_KEY"); v != "" {
+		cfg.Metadata.Hardcover.APIKey = v
 	}
 	// Initial admin password — env-var only, never in config file.
 	if v := os.Getenv("CODEX_ADMIN_PASSWORD"); v != "" {

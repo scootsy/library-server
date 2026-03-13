@@ -9,6 +9,7 @@
 #   CODEX_DB_PATH      — overrides database.path
 #   CODEX_LOG_LEVEL    — overrides log.level
 #   CODEX_LOG_FORMAT   — overrides log.format
+#   CODEX_HARDCOVER_API_KEY — overrides metadata.hardcover.api_key
 
 # ── HTTP server ────────────────────────────────────────────────────────────────
 server:
@@ -53,3 +54,34 @@ log:
 
   # Log format: text (human-readable) | json (structured, for log aggregators)
   format: "text"
+
+# —— Metadata enrichment ——–––––––––––––––––––––––––––––––––––––––––––––––––––
+metadata:
+  # Automatically queue metadata lookups for newly discovered works.
+  auto_enrich: true
+
+  # Confidence thresholds used by the metadata engine.
+  confidence_auto_apply: 0.85
+  confidence_min_match: 0.50
+
+  # How long source responses stay in the cache table before purge.
+  source_cache_retention_days: 90
+
+  google_books:
+    enabled: true
+    priority: 10
+
+  # Hardcover requires an API token from https://hardcover.app/settings/api.
+  # Prefer setting CODEX_HARDCOVER_API_KEY instead of storing the token here.
+  hardcover:
+    enabled: false
+    api_key: ""
+    priority: 20
+
+  open_library:
+    enabled: true
+    priority: 30
+
+  audnexus:
+    enabled: true
+    priority: 40

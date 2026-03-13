@@ -177,6 +177,30 @@ func mergeCandidateIntoSidecar(sc *scanner.Sidecar, c sources.Candidate, locked 
 		}
 	}
 
+	// Ratings are stored per-source and never merged across sources.
+	if !locked["ratings"] && c.Rating != nil && c.Source != "" {
+		if sc.Ratings == nil {
+			sc.Ratings = make(map[string]*scanner.SidecarRating)
+		}
+		fetchedAt := c.Rating.FetchedAt
+		if fetchedAt.IsZero() {
+			fetchedAt = c.FetchedAt
+		}
+		if fetchedAt.IsZero() {
+			fetchedAt = time.Now().UTC()
+		}
+		maxScore := c.Rating.Max
+		if maxScore <= 0 {
+			maxScore = 5
+		}
+		sc.Ratings[c.Source] = &scanner.SidecarRating{
+			Score:     c.Rating.Score,
+			Max:       maxScore,
+			Count:     c.Rating.Count,
+			FetchedAt: fetchedAt,
+		}
+	}
+
 	// Audiobook duration from candidate
 	if !locked["audiobook"] && c.DurationSecs > 0 {
 		if sc.Audiobook == nil {

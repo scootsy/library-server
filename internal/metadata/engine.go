@@ -204,6 +204,14 @@ func (e *Engine) fetchAndScore(workID string) ([]ScoredCandidate, error) {
 
 	// Sort by confidence descending
 	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].Score.Overall == scored[j].Score.Overall {
+			pi := e.sourcePriority(scored[i].Candidate.Source)
+			pj := e.sourcePriority(scored[j].Candidate.Source)
+			if pi == pj {
+				return scored[i].Candidate.Source < scored[j].Candidate.Source
+			}
+			return pi < pj
+		}
 		return scored[i].Score.Overall > scored[j].Score.Overall
 	})
 
@@ -362,4 +370,31 @@ func generateTaskID() string {
 		return fmt.Sprintf("mt_%d", time.Now().UnixMilli())
 	}
 	return fmt.Sprintf("mt_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b))
+}
+
+func (e *Engine) sourcePriority(source string) int {
+	switch source {
+	case "google_books":
+		if e.cfg.GoogleBooks.Priority > 0 {
+			return e.cfg.GoogleBooks.Priority
+		}
+		return 10
+	case "hardcover":
+		if e.cfg.Hardcover.Priority > 0 {
+			return e.cfg.Hardcover.Priority
+		}
+		return 20
+	case "open_library":
+		if e.cfg.OpenLibrary.Priority > 0 {
+			return e.cfg.OpenLibrary.Priority
+		}
+		return 30
+	case "audnexus":
+		if e.cfg.Audnexus.Priority > 0 {
+			return e.cfg.Audnexus.Priority
+		}
+		return 40
+	default:
+		return 1000
+	}
 }

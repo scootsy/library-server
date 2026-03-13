@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -144,15 +145,51 @@ func ensureMediaRoots(db *sql.DB, cfg *config.Config) error {
 // initMetadataEngine builds and returns a metadata engine with all enabled
 // sources configured.
 func initMetadataEngine(db *sql.DB, cfg *config.Config) *metadata.Engine {
-	var srcs []sources.MetadataSource
+	type sourceSpec struct {
+		priority int
+		source   sources.MetadataSource
+	}
+
+	var specs []sourceSpec
 	if cfg.Metadata.GoogleBooks.Enabled {
-		srcs = append(srcs, sources.NewGoogleBooks(cfg.Metadata.GoogleBooks.APIKey, nil))
+		specs = append(specs, sourceSpec{
+			priority: cfg.Metadata.GoogleBooks.Priority,
+			source:   sources.NewGoogleBooks(cfg.Metadata.GoogleBooks.APIKey, nil),
+		})
+	}
+	if cfg.Metadata.Hardcover.Enabled {
+		if strings.TrimSpace(cfg.Metadata.Hardcover.APIKey) == "" {
+			slog.Warn("hardcover metadata source enabled but no API key configured; skipping source")
+		} else {
+			specs = append(specs, sourceSpec{
+				priority: cfg.Metadata.Hardcover.Priority,
+				source:   sources.NewHardcover(cfg.Metadata.Hardcover.APIKey, nil),
+			})
+		}
 	}
 	if cfg.Metadata.OpenLibrary.Enabled {
-		srcs = append(srcs, sources.NewOpenLibrary(nil))
+		specs = append(specs, sourceSpec{
+			priority: cfg.Metadata.OpenLibrary.Priority,
+			source:   sources.NewOpenLibrary(nil),
+		})
 	}
 	if cfg.Metadata.Audnexus.Enabled {
-		srcs = append(srcs, sources.NewAudnexus(nil))
+		specs = append(specs, sourceSpec{
+			priority: cfg.Metadata.Audnexus.Priority,
+			source:   sources.NewAudnexus(nil),
+		})
+	}
+
+	sort.Slice(specs, func(i, j int) bool {
+		if specs[i].priority == specs[j].priority {
+			return specs[i].source.Name() < specs[j].source.Name()
+		}
+		return specs[i].priority < specs[j].priority
+	})
+
+	srcs := make([]sources.MetadataSource, 0, len(specs))
+	for _, spec := range specs {
+		srcs = append(srcs, spec.source)
 	}
 
 	engine := metadata.NewEngine(db, &cfg.Metadata, srcs)

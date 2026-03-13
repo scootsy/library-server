@@ -361,3 +361,56 @@ func TestEngine_PurgeExpiredCache(t *testing.T) {
 		t.Errorf("purged %d entries, want 0", n)
 	}
 }
+
+func TestEngine_FetchAndScore_UsesSourcePriorityForTies(t *testing.T) {
+	db := openTestDB(t)
+	workID := insertTestWork(t, db, "James", "Percival Everett")
+
+	candidate := sources.Candidate{
+		Title:     "James",
+		Authors:   []sources.Contributor{{Name: "Percival Everett", Role: "author"}},
+		FetchedAt: time.Now(),
+	}
+
+	hardcover := &mockSource{
+		name: "hardcover",
+		candidates: []sources.Candidate{
+			func() sources.Candidate {
+				c := candidate
+				c.Source = "hardcover"
+				c.ExternalID = "321"
+				return c
+			}(),
+		},
+	}
+	openLibrary := &mockSource{
+		name: "open_library",
+		candidates: []sources.Candidate{
+			func() sources.Candidate {
+				c := candidate
+				c.Source = "open_library"
+				c.ExternalID = "/works/OL1W"
+				return c
+			}(),
+		},
+	}
+
+	cfg := &config.MetadataConfig{
+		ConfidenceAutoApply: 0.85,
+		ConfidenceMinMatch:  0.50,
+		Hardcover:           config.HardcoverConfig{Priority: 1},
+		OpenLibrary:         config.OpenLibraryConfig{Priority: 30},
+	}
+
+	engine := NewEngine(db, cfg, []sources.MetadataSource{openLibrary, hardcover})
+	scored, err := engine.fetchAndScore(workID)
+	if err != nil {
+		t.Fatalf("fetchAndScore: %v", err)
+	}
+	if len(scored) != 2 {
+		t.Fatalf("len(scored) = %d, want 2", len(scored))
+	}
+	if scored[0].Candidate.Source != "hardcover" {
+		t.Fatalf("top source = %q, want %q", scored[0].Candidate.Source, "hardcover")
+	}
+}
