@@ -33,3 +33,20 @@ jobs:
 
   # The frontend (SvelteKit) is a Phase 3 deliverable. The Node.js build job
   # will be added to this workflow when the web/ directory is introduced.
+
+  # Node/Svelte build job — enabled once web/ directory is added
+  # build-web:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version-file: 'web/.nvmrc'
+  #         cache: 'npm'
+  #         cache-dependency-path: 'web/package-lock.json'
+  #     - name: Install Node dependencies
+  #       working-directory: web
+  #       run: npm ci
+  #     - name: Build Svelte
+  #       working-directory: web
