@@ -371,8 +371,8 @@ func (h *Hardcover) bookToCandidate(book hardcoverBook) Candidate {
 	}
 
 	addHardcoverSeries(&candidate.Series, book.FeaturedBookSeries)
-	for _, series := range book.BookSeries {
-		addHardcoverSeries(&candidate.Series, series)
+	for i := range book.BookSeries {
+		addHardcoverSeries(&candidate.Series, &book.BookSeries[i])
 	}
 	for _, name := range book.SeriesNames {
 		if strings.TrimSpace(name) == "" {
@@ -694,6 +694,13 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// normalizeISBN strips hyphens and spaces from an ISBN string.
+func normalizeISBN(s string) string {
+	s = strings.ReplaceAll(s, "-", "")
+	s = strings.ReplaceAll(s, " ", "")
+	return strings.ToLower(s)
 }
 
 func firstPositive(values ...int) int {
