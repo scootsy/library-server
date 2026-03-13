@@ -328,6 +328,46 @@ when the server grows beyond the health endpoint.
 
 ---
 
+### L9. Server shutdown doesn't drain the error channel
+
+**File:** `internal/server/server.go:59-71`
+
+After `Shutdown()` returns, the goroutine running `Serve()` may still be unwinding.
+The `errCh` channel is never drained after the `ctx.Done()` branch, making correctness
+timing-dependent. Should drain `errCh` after shutdown to ensure the goroutine exits.
+
+---
+
+### L10. `--migrate` flag doesn't verify migration success
+
+**File:** `cmd/codex/main.go:53-56`
+
+Migrations run inside `database.Open()`. The `--migrate` path logs "migrations complete"
+unconditionally after `Open()` succeeds, but doesn't independently verify the schema is
+in the expected state. If `Open()` silently skips a failed migration, this gives false
+confidence.
+
+---
+
+### L11. Silent env var parse failures in config
+
+**File:** `internal/config/config.go:157-160`
+
+Invalid `CODEX_PORT` values (e.g., `abc`, `-1`) are silently ignored and the default
+port is used. The user gets no feedback that their environment variable was rejected.
+Should log a warning when env var parsing fails.
+
+---
+
+### L12. No tests for config or server packages
+
+**Files:** `internal/config/` and `internal/server/`
+
+Neither package has any test files. Config loading (YAML parsing, env var overrides,
+defaults) and server setup (binding, health endpoint, shutdown) are untested.
+
+---
+
 ## Architecture & Structural Observations
 
 ### What's Working Well
@@ -339,7 +379,7 @@ when the server grows beyond the health endpoint.
 3. **HTTP client hygiene** — All metadata sources properly close response bodies, limit
    response sizes to 2 MiB, use context propagation, and have timeouts.
 4. **TLS security** — No `InsecureSkipVerify` anywhere in the codebase.
-5. **Graceful shutdown** — Server properly drains connections with a 30-second deadline.
+5. **Graceful shutdown** — Server has a 30-second shutdown deadline (minor drain issue in L9).
 6. **Secrets handling** — API keys are env-var-only (`yaml:"-"` tag on GoogleBooksConfig).
 7. **Dependency footprint** — Only 3 direct dependencies (`uuid`, `go-sqlite3`, `yaml.v3`).
    Minimal attack surface.
@@ -381,3 +421,6 @@ when the server grows beyond the health endpoint.
 11. Expand SafePath test coverage (L1)
 12. Centralize format detection (L5)
 13. Share `http.Client` across metadata sources (M9)
+14. Drain error channel after server shutdown (L9)
+15. Add tests for config and server packages (L12)
+16. Log warnings for invalid env var overrides (L11)
