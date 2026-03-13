@@ -56,10 +56,16 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 		}
 
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// For SPA routing: if the requested file doesn't exist, serve index.html.
 			path := r.URL.Path
+
+			// For the root path or SPA client-side routes, serve index.html
+			// directly from the embedded FS. We must NOT rewrite r.URL.Path
+			// to "/index.html" and pass to http.FileServer, because FileServer
+			// has built-in behavior that 301-redirects "/index.html" to "./"
+			// (the directory), which resolves back to "/" — causing an infinite
+			// redirect loop.
 			if path == "/" {
-				serveIndex(w, r)
+				http.ServeFileFS(w, r, webFS, "index.html")
 				return
 			}
 
@@ -78,7 +84,8 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 					return
 				}
 				// File not found — serve index.html for SPA client-side routing.
-				serveIndex(w, r)
+				// Use http.ServeFileFS to avoid the FileServer redirect loop.
+				http.ServeFileFS(w, r, webFS, "index.html")
 				return
 			}
 

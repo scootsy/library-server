@@ -283,6 +283,10 @@ All extracted hints are passed to the metadata engine as the starting point for 
 
 ## Protocol Adapters
 
+> **Implementation Status:** All protocol adapters below are **planned but not yet implemented**.
+> The `internal/protocols/` package does not exist yet. The designs below are the target
+> architecture for future phases (see Development Roadmap).
+
 Each protocol is implemented as an independent Go package that reads from the shared SQLite database and exposes HTTP endpoints. Adapters can be enabled/disabled in configuration.
 
 ### OPDS 1.2
@@ -433,7 +437,7 @@ codex/
 │   │   ├── scan.go                    ← REST endpoints for scan triggers
 │   │   └── settings.go               ← REST endpoints for app configuration
 │   │
-│   ├── protocols/
+│   ├── protocols/                        ⚠ PLANNED — not yet implemented
 │   │   ├── opds/
 │   │   │   ├── handler.go             ← OPDS feed generation
 │   │   │   ├── feed.go                ← Atom XML construction

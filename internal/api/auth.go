@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -87,12 +88,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("login: failed to update last_login_at", "error", err)
 	}
 
-	// Set session cookie
+	// Set session cookie. Derive the Secure flag from the configured base_url
+	// so the cookie works correctly behind HTTPS reverse proxies.
+	secureCookie := strings.HasPrefix(h.config.Server.BaseURL, "https://")
 	http.SetCookie(w, &http.Cookie{
 		Name:     "codex_session",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   lifetimeDays * 24 * 60 * 60,
 	})
@@ -108,11 +112,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract the token to delete the specific session
+	// Extract the token to delete the specific session.
+	// Use the same Bearer-prefix check as auth middleware for consistency.
 	token := ""
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		if len(authHeader) > 7 {
-			token = authHeader[7:]
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 	}
 	if token == "" {
@@ -127,12 +132,14 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Clear cookie
+	// Clear cookie. Secure flag must match the login cookie for browsers to clear it.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "codex_session",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   strings.HasPrefix(h.config.Server.BaseURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 
