@@ -96,6 +96,14 @@ export function getWork(id) {
 	return request(`/works/${id}`);
 }
 
+export function getWorkCoverUrl(id) {
+	return `${BASE}/works/${encodeURIComponent(id)}/cover`;
+}
+
+export function getWorkFileDownloadUrl(workId, fileId) {
+	return `${BASE}/works/${encodeURIComponent(workId)}/files/${encodeURIComponent(fileId)}/download`;
+}
+
 export function updateWork(id, fields) {
 	return request(`/works/${id}`, {
 		method: 'PUT',

@@ -1,4 +1,5 @@
 <script>
+	import { page as routeState } from '$app/state';
 	import { listWorks, searchWorks } from '$lib/api/client.js';
 	import { onMount } from 'svelte';
 
@@ -9,21 +10,22 @@
 	let searchQuery = $state('');
 	let sortBy = $state('sort_title');
 	let sortOrder = $state('asc');
-	let page = $state(0);
+	let pageIndex = $state(0);
 	let needsReview = $state('');
 	const limit = 50;
 
 	async function loadWorks() {
 		loading = true;
 		error = null;
+
 		try {
 			let result;
 			if (searchQuery.trim()) {
-				result = await searchWorks(searchQuery, limit, page * limit);
+				result = await searchWorks(searchQuery, limit, pageIndex * limit);
 			} else {
 				result = await listWorks({
 					limit,
-					offset: page * limit,
+					offset: pageIndex * limit,
 					sort: sortBy,
 					order: sortOrder,
 					needs_review: needsReview || undefined
@@ -38,10 +40,14 @@
 		}
 	}
 
-	onMount(loadWorks);
+	onMount(() => {
+		searchQuery = routeState.url.searchParams.get('q') || '';
+		loadWorks();
+	});
 
 	function handleSearch() {
-		page = 0;
+		pageIndex = 0;
+		syncBrowseUrl();
 		loadWorks();
 	}
 
@@ -55,8 +61,29 @@
 		loadWorks();
 	}
 
-	function prevPage() { if (page > 0) { page--; loadWorks(); } }
-	function nextPage() { if ((page + 1) * limit < total) { page++; loadWorks(); } }
+	function prevPage() {
+		if (pageIndex > 0) {
+			pageIndex--;
+			loadWorks();
+		}
+	}
+
+	function nextPage() {
+		if ((pageIndex + 1) * limit < total) {
+			pageIndex++;
+			loadWorks();
+		}
+	}
+
+	function syncBrowseUrl() {
+		const url = new URL(window.location.href);
+		if (searchQuery.trim()) {
+			url.searchParams.set('q', searchQuery.trim());
+		} else {
+			url.searchParams.delete('q');
+		}
+		window.history.replaceState({}, '', url);
+	}
 </script>
 
 <svelte:head>
@@ -90,7 +117,7 @@
 	<p class="loading">Loading...</p>
 {:else}
 	<div class="results-info">
-		Showing {Math.min(page * limit + 1, total)}–{Math.min((page + 1) * limit, total)} of {total} works
+		Showing {Math.min(pageIndex * limit + 1, total)}-{Math.min((pageIndex + 1) * limit, total)} of {total} works
 	</div>
 
 	<table class="table">
@@ -116,11 +143,11 @@
 					<td>
 						<a href="/works/{work.ID}">
 							<strong>{work.Title}</strong>
-							{#if work.Subtitle}<br/><span class="subtitle">{work.Subtitle}</span>{/if}
+							{#if work.Subtitle}<br /><span class="subtitle">{work.Subtitle}</span>{/if}
 						</a>
 					</td>
-					<td>{work.Language || '—'}</td>
-					<td>{work.PublishDate || '—'}</td>
+					<td>{work.Language || '--'}</td>
+					<td>{work.PublishDate || '--'}</td>
 					<td>{new Date(work.AddedAt).toLocaleDateString()}</td>
 					<td>
 						{#if work.MatchConfidence > 0}
@@ -128,10 +155,10 @@
 								{(work.MatchConfidence * 100).toFixed(0)}%
 							</span>
 						{:else}
-							—
+							--
 						{/if}
 					</td>
-					<td>{work.NeedsReview ? '⚠' : '✓'}</td>
+					<td>{work.NeedsReview ? '!' : 'OK'}</td>
 				</tr>
 			{:else}
 				<tr><td colspan="6" class="text-muted">No works found.</td></tr>
@@ -140,9 +167,9 @@
 	</table>
 
 	<div class="pagination">
-		<button onclick={prevPage} disabled={page === 0}>Previous</button>
-		<span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-		<button onclick={nextPage} disabled={(page + 1) * limit >= total}>Next</button>
+		<button onclick={prevPage} disabled={pageIndex === 0}>Previous</button>
+		<span>Page {pageIndex + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
+		<button onclick={nextPage} disabled={(pageIndex + 1) * limit >= total}>Next</button>
 	</div>
 {/if}
 

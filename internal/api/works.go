@@ -3,11 +3,14 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 
 	"github.com/scootsy/library-server/internal/config"
 	"github.com/scootsy/library-server/internal/database/queries"
+	"github.com/scootsy/library-server/internal/security"
 )
 
 // WorksHandler handles REST endpoints for works.
@@ -79,13 +82,13 @@ func (h *WorksHandler) Search(w http.ResponseWriter, r *http.Request) {
 // workDetailResponse provides the full detail view of a work.
 type workDetailResponse struct {
 	*queries.Work
-	Contributors []workContributorResponse `json:"contributors"`
-	Series       []workSeriesResponse      `json:"series"`
-	Tags         []queries.Tag             `json:"tags"`
-	Files        []*queries.WorkFile       `json:"files"`
-	Identifiers  map[string]string         `json:"identifiers"`
-	Covers       []*queries.Cover          `json:"covers"`
-	Ratings      []queries.Rating          `json:"ratings"`
+	Contributors []workContributorResponse   `json:"contributors"`
+	Series       []workSeriesResponse        `json:"series"`
+	Tags         []queries.Tag               `json:"tags"`
+	Files        []*queries.WorkFile         `json:"files"`
+	Identifiers  map[string]string           `json:"identifiers"`
+	Covers       []*queries.Cover            `json:"covers"`
+	Ratings      []queries.Rating            `json:"ratings"`
 	Chapters     []*queries.AudiobookChapter `json:"chapters,omitempty"`
 }
 
@@ -184,6 +187,86 @@ func (h *WorksHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// Cover serves the selected cover image for a work.
+func (h *WorksHandler) Cover(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	rootPath, dirPath, err := queries.GetWorkDirectoryPath(h.db, id)
+	if err != nil {
+		slog.Warn("failed to resolve work directory for cover", "work_id", id, "error", err)
+		http.NotFound(w, r)
+		return
+	}
+
+	cover, err := queries.GetSelectedCover(h.db, id)
+	if err != nil {
+		slog.Error("failed to get selected cover", "work_id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load cover")
+		return
+	}
+	if cover == nil {
+		covers, coversErr := queries.GetWorkCovers(h.db, id)
+		if coversErr != nil {
+			slog.Error("failed to list covers", "work_id", id, "error", coversErr)
+			writeError(w, http.StatusInternalServerError, "failed to load cover")
+			return
+		}
+		if len(covers) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		cover = covers[0]
+	}
+
+	absPath, err := security.SafePath(filepath.Join(rootPath, dirPath, filepath.Base(cover.Filename)), rootPath)
+	if err != nil {
+		slog.Warn("invalid cover path", "work_id", id, "filename", cover.Filename, "error", err)
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Del("Content-Type")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, absPath)
+}
+
+// DownloadFile streams a file associated with a work as an attachment.
+func (h *WorksHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	fileID := r.PathValue("fileID")
+
+	rootPath, dirPath, err := queries.GetWorkDirectoryPath(h.db, id)
+	if err != nil {
+		slog.Warn("failed to resolve work directory for download", "work_id", id, "error", err)
+		http.NotFound(w, r)
+		return
+	}
+
+	file, err := queries.GetWorkFileByID(h.db, id, fileID)
+	if err != nil {
+		slog.Error("failed to get work file", "work_id", id, "file_id", fileID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load file")
+		return
+	}
+	if file == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	safeFilename := filepath.Base(file.Filename)
+	absPath, err := security.SafePath(filepath.Join(rootPath, dirPath, safeFilename), rootPath)
+	if err != nil {
+		slog.Warn("invalid file path", "work_id", id, "file_id", fileID, "filename", file.Filename, "error", err)
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Del("Content-Type")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", safeFilename))
+	http.ServeFile(w, r, absPath)
 }
 
 // Update modifies user-editable metadata fields on a work.
