@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/scootsy/library-server/internal/config"
@@ -16,17 +18,55 @@ import (
 
 // Server wraps the HTTP server and its dependencies.
 type Server struct {
-	cfg    *config.Config
-	http   *http.Server
+	cfg  *config.Config
+	http *http.Server
 }
 
 // New creates a Server with all routes registered.
-func New(cfg *config.Config) *Server {
+// apiHandler is the REST API handler (from internal/api).
+// webFS is the embedded Svelte SPA filesystem (may be nil during development).
+func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 	s := &Server{cfg: cfg}
 	mux := http.NewServeMux()
 
 	// Public endpoints
 	mux.HandleFunc("GET /health", s.handleHealth)
+
+	// Mount the REST API
+	if apiHandler != nil {
+		mux.Handle("/api/", apiHandler)
+	}
+
+	// Serve the embedded Svelte SPA for all non-API routes.
+	if webFS != nil {
+		fileServer := http.FileServer(http.FS(webFS))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// For SPA routing: if the requested file doesn't exist, serve index.html.
+			path := r.URL.Path
+			if path == "/" {
+				r.URL.Path = "/index.html"
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+
+			// Try to serve the static file directly.
+			if !strings.HasPrefix(path, "/api/") {
+				// Check if the file exists in the embedded FS.
+				f, err := webFS.Open(strings.TrimPrefix(path, "/"))
+				if err == nil {
+					f.Close()
+					fileServer.ServeHTTP(w, r)
+					return
+				}
+				// File not found — serve index.html for SPA client-side routing.
+				r.URL.Path = "/index.html"
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+
+			http.NotFound(w, r)
+		})
+	}
 
 	s.http = &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
