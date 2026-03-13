@@ -317,8 +317,6 @@ func opfToMeta(pkg *opfPackage) *EPUBMeta {
 	}
 
 	// Cover image from manifest
-	opfDir := path.Dir(pkg.Manifest.Items[0].Href) // fallback
-	_ = opfDir
 	coverID := ""
 	for _, meta := range md.Metas {
 		if meta.Name == "cover" {

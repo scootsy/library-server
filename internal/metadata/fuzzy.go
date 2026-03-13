@@ -323,10 +323,3 @@ func minOf3(a, b, c int) int {
 	}
 	return c
 }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

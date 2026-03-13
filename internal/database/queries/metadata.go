@@ -2,7 +2,6 @@ package queries
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -184,19 +183,14 @@ type SourceCacheEntry struct {
 
 // UpsertSourceCache inserts or replaces a source cache entry for (work_id, source).
 func UpsertSourceCache(db *sql.DB, e *SourceCacheEntry) error {
-	response, err := json.Marshal(e.Response)
-	if err != nil {
-		return fmt.Errorf("marshalling source cache response: %w", err)
-	}
-
-	_, err = db.Exec(`
+	_, err := db.Exec(`
 		INSERT INTO source_cache (work_id, source, query_used, response, fetched_at)
 		VALUES (?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(work_id, source) DO UPDATE SET
 			query_used = excluded.query_used,
 			response   = excluded.response,
 			fetched_at = excluded.fetched_at
-	`, e.WorkID, e.Source, e.QueryUsed, string(response))
+	`, e.WorkID, e.Source, e.QueryUsed, e.Response)
 	if err != nil {
 		return fmt.Errorf("upserting source cache for work %q source %q: %w", e.WorkID, e.Source, err)
 	}
