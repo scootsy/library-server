@@ -64,6 +64,8 @@ func NewRouter(deps *Dependencies) http.Handler {
 	authed.HandleFunc("GET /api/works", works.List)
 	authed.HandleFunc("GET /api/works/search", works.Search)
 	authed.HandleFunc("GET /api/works/{id}", works.Get)
+	authed.HandleFunc("GET /api/works/{id}/cover", works.Cover)
+	authed.HandleFunc("GET /api/works/{id}/files/{fileID}/download", works.DownloadFile)
 	authed.HandleFunc("PUT /api/works/{id}", works.Update)
 	authed.HandleFunc("DELETE /api/works/{id}", works.Delete)
 

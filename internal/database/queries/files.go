@@ -57,6 +57,32 @@ func DeleteWorkFiles(db *sql.DB, workID string) error {
 	return nil
 }
 
+// GetWorkFileByID returns a single file for a work, or nil if not found.
+func GetWorkFileByID(db *sql.DB, workID, fileID string) (*WorkFile, error) {
+	row := db.QueryRow(`
+		SELECT id, work_id, filename, format, size_bytes,
+		       COALESCE(checksum_sha256,''), COALESCE(duration_seconds,0),
+		       COALESCE(bitrate_kbps,0), COALESCE(codec,''), has_media_overlay
+		FROM work_files
+		WHERE work_id = ? AND id = ?
+	`, workID, fileID)
+
+	var f WorkFile
+	var hasOverlay int
+	err := row.Scan(
+		&f.ID, &f.WorkID, &f.Filename, &f.Format, &f.SizeBytes,
+		&f.ChecksumSHA256, &f.DurationSeconds, &f.BitrateKbps, &f.Codec, &hasOverlay,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying work file %q for work %q: %w", fileID, workID, err)
+	}
+	f.HasMediaOverlay = hasOverlay != 0
+	return &f, nil
+}
+
 // AudiobookChapter is a single chapter in an audiobook.
 type AudiobookChapter struct {
 	ID            string
