@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/scootsy/library-server/embedded"
 	"github.com/scootsy/library-server/internal/api"
+	"github.com/scootsy/library-server/internal/auth"
 	"github.com/scootsy/library-server/internal/config"
 	"github.com/scootsy/library-server/internal/database"
 	"github.com/scootsy/library-server/internal/database/queries"
@@ -59,6 +60,12 @@ func run() int {
 	if *migrateOnly {
 		slog.Info("migrations complete")
 		return 0
+	}
+
+	// ── Bootstrap admin user ────────────────────────────────────────────────
+	if err := auth.EnsureAdminUser(db, cfg.Auth.InitialAdminPassword); err != nil {
+		slog.Error("failed to bootstrap admin user", "error", err)
+		return 1
 	}
 
 	// ── Register configured media roots ──────────────────────────────────────

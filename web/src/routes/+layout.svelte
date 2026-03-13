@@ -1,5 +1,38 @@
 <script>
+	import { getCurrentUser, logout } from '$lib/api/client.js';
+
 	let { children } = $props();
+
+	let user = $state(null);
+	let authChecked = $state(false);
+	let isLoginPage = $state(false);
+
+	$effect(() => {
+		isLoginPage = window.location.pathname === '/login';
+
+		if (isLoginPage) {
+			authChecked = true;
+			return;
+		}
+
+		getCurrentUser()
+			.then((u) => {
+				user = u;
+				authChecked = true;
+			})
+			.catch(() => {
+				window.location.href = '/login';
+			});
+	});
+
+	async function handleLogout() {
+		try {
+			await logout();
+		} catch {
+			// ignore errors during logout
+		}
+		window.location.href = '/login';
+	}
 </script>
 
 <svelte:head>
@@ -33,25 +66,63 @@
 	</style>
 </svelte:head>
 
-<div class="layout">
-	<nav class="sidebar">
-		<div class="logo">
-			<h1>Codex</h1>
-		</div>
-		<ul class="nav-links">
-			<li><a href="/">Dashboard</a></li>
-			<li><a href="/browse">Browse</a></li>
-			<li><a href="/review">Review Queue</a></li>
-			<li><a href="/collections">Collections</a></li>
-			<li><a href="/settings">Settings</a></li>
-		</ul>
-	</nav>
-	<main class="content">
-		{@render children()}
-	</main>
-</div>
+{#if !authChecked}
+	<div class="loading-screen">
+		<div class="loading-spinner"></div>
+	</div>
+{:else if isLoginPage}
+	{@render children()}
+{:else if user}
+	<div class="layout">
+		<nav class="sidebar">
+			<div class="logo">
+				<h1>Codex</h1>
+			</div>
+			<ul class="nav-links">
+				<li><a href="/">Dashboard</a></li>
+				<li><a href="/browse">Browse</a></li>
+				<li><a href="/review">Review Queue</a></li>
+				<li><a href="/collections">Collections</a></li>
+				{#if user.role === 'admin'}
+					<li><a href="/users">Users</a></li>
+				{/if}
+				<li><a href="/settings">Settings</a></li>
+			</ul>
+			<div class="sidebar-footer">
+				<div class="user-info">
+					<span class="user-name">{user.display_name || user.username}</span>
+					<span class="user-role">{user.role}</span>
+				</div>
+				<button class="btn-logout" onclick={handleLogout}>Sign out</button>
+			</div>
+		</nav>
+		<main class="content">
+			{@render children()}
+		</main>
+	</div>
+{/if}
 
 <style>
+	.loading-screen {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 100vh;
+	}
+
+	.loading-spinner {
+		width: 32px;
+		height: 32px;
+		border: 3px solid var(--border);
+		border-top-color: var(--primary);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+
 	.layout {
 		display: flex;
 		min-height: 100vh;
@@ -63,6 +134,8 @@
 		border-right: 1px solid var(--border);
 		padding: 1rem;
 		flex-shrink: 0;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.logo h1 {
@@ -73,6 +146,7 @@
 
 	.nav-links {
 		list-style: none;
+		flex: 1;
 	}
 
 	.nav-links li {
@@ -90,6 +164,47 @@
 	.nav-links a:hover {
 		background: var(--bg-hover);
 		color: var(--text);
+	}
+
+	.sidebar-footer {
+		border-top: 1px solid var(--border);
+		padding-top: 0.75rem;
+		margin-top: 0.75rem;
+	}
+
+	.user-info {
+		display: flex;
+		flex-direction: column;
+		margin-bottom: 0.5rem;
+	}
+
+	.user-name {
+		font-size: 0.85rem;
+		color: var(--text);
+	}
+
+	.user-role {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		text-transform: capitalize;
+	}
+
+	.btn-logout {
+		width: 100%;
+		padding: 0.4rem;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		color: var(--text-muted);
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.btn-logout:hover {
+		background: var(--bg-hover);
+		color: var(--text);
+		border-color: var(--text-muted);
 	}
 
 	.content {

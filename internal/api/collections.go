@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/scootsy/library-server/internal/auth"
 	"github.com/scootsy/library-server/internal/database/queries"
 )
 
@@ -85,8 +86,10 @@ func (h *CollectionsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.CollectionType == "" {
 		req.CollectionType = "manual"
 	}
-	// Until auth is implemented (Phase 4), use a placeholder user ID if none provided.
-	if req.UserID == "" {
+	// Use the authenticated user's ID.
+	if user := auth.UserFromContext(r.Context()); user != nil {
+		req.UserID = user.ID
+	} else if req.UserID == "" {
 		req.UserID = "system"
 	}
 

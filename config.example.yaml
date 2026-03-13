@@ -38,6 +38,14 @@ media:
     # - name: "Audiobooks"
     #   path: "/media/audiobooks"
 
+# ── Authentication ────────────────────────────────────────────────────────────────
+# On first startup, Codex creates an "admin" account. Set the initial password
+# via the CODEX_ADMIN_PASSWORD environment variable (defaults to "admin").
+# You should change this immediately after first login.
+auth:
+  # How many days a login session stays valid.
+  session_lifetime_days: 30
+
 # ── Logging ───────────────────────────────────────────────────────────────────────
 log:
   # Log level: debug | info | warn | error

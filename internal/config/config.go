@@ -18,6 +18,18 @@ type Config struct {
 	Media    MediaConfig    `yaml:"media"`
 	Log      LogConfig      `yaml:"log"`
 	Metadata MetadataConfig `yaml:"metadata"`
+	Auth     AuthConfig     `yaml:"auth"`
+}
+
+// AuthConfig holds authentication settings.
+type AuthConfig struct {
+	// InitialAdminPassword is the password set for the initial "admin" account
+	// when the database is first created. If empty, defaults to "admin".
+	// Override via CODEX_ADMIN_PASSWORD environment variable.
+	InitialAdminPassword string `yaml:"-"` // env-var only, never in config file
+
+	// SessionLifetimeDays is how long sessions remain valid. Default: 30.
+	SessionLifetimeDays int `yaml:"session_lifetime_days"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -200,6 +212,10 @@ func defaults() *Config {
 			Level:  "info",
 			Format: "text",
 		},
+		Auth: AuthConfig{
+			InitialAdminPassword: "admin",
+			SessionLifetimeDays:  30,
+		},
 		Metadata: MetadataConfig{
 			AutoEnrich:               true,
 			ConfidenceAutoApply:      0.85,
@@ -245,5 +261,9 @@ func applyEnvOverrides(cfg *Config) {
 	// Metadata API keys are NEVER read from config files — env-var only.
 	if v := os.Getenv("CODEX_GOOGLE_BOOKS_API_KEY"); v != "" {
 		cfg.Metadata.GoogleBooks.APIKey = v
+	}
+	// Initial admin password — env-var only, never in config file.
+	if v := os.Getenv("CODEX_ADMIN_PASSWORD"); v != "" {
+		cfg.Auth.InitialAdminPassword = v
 	}
 }

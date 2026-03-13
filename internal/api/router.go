@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/scootsy/library-server/internal/auth"
 	"github.com/scootsy/library-server/internal/config"
 	"github.com/scootsy/library-server/internal/database/queries"
 	"github.com/scootsy/library-server/internal/metadata"
@@ -28,6 +29,8 @@ type Dependencies struct {
 func NewRouter(deps *Dependencies) http.Handler {
 	mux := http.NewServeMux()
 
+	authH := &AuthHandler{db: deps.DB, config: deps.Config}
+	usersH := &UsersHandler{db: deps.DB}
 	works := &WorksHandler{db: deps.DB, config: deps.Config}
 	contribs := &ContributorsHandler{db: deps.DB}
 	seriesH := &SeriesHandler{db: deps.DB}
@@ -39,54 +42,82 @@ func NewRouter(deps *Dependencies) http.Handler {
 	settings := &SettingsHandler{db: deps.DB}
 	dashboard := &DashboardHandler{db: deps.DB}
 
-	// ── Works ────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/works", works.List)
-	mux.HandleFunc("GET /api/works/search", works.Search)
-	mux.HandleFunc("GET /api/works/{id}", works.Get)
-	mux.HandleFunc("PUT /api/works/{id}", works.Update)
-	mux.HandleFunc("DELETE /api/works/{id}", works.Delete)
+	// Auth middleware
+	requireAuth := auth.Middleware(deps.DB)
+	requireAdmin := auth.RequireRole("admin")
 
-	// ── Contributors ─────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/contributors", contribs.List)
-	mux.HandleFunc("GET /api/contributors/{id}", contribs.Get)
+	// ── Public auth endpoints (no session required) ─────────────────────
+	mux.HandleFunc("POST /api/auth/login", authH.Login)
 
-	// ── Series ───────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/series", seriesH.List)
-	mux.HandleFunc("GET /api/series/{id}", seriesH.Get)
+	// ── Authenticated routes ────────────────────────────────────────────
+	authed := http.NewServeMux()
 
-	// ── Tags ─────────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/tags", tagsH.List)
-	mux.HandleFunc("GET /api/tags/{id}", tagsH.Get)
+	// Auth
+	authed.HandleFunc("POST /api/auth/logout", authH.Logout)
+	authed.HandleFunc("GET /api/auth/me", authH.Me)
+	authed.HandleFunc("PUT /api/auth/password", authH.ChangePassword)
 
-	// ── Collections ──────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/collections", collections.List)
-	mux.HandleFunc("POST /api/collections", collections.Create)
-	mux.HandleFunc("GET /api/collections/{id}", collections.Get)
-	mux.HandleFunc("PUT /api/collections/{id}", collections.Update)
-	mux.HandleFunc("DELETE /api/collections/{id}", collections.Delete)
-	mux.HandleFunc("POST /api/collections/{id}/works", collections.AddWork)
-	mux.HandleFunc("DELETE /api/collections/{id}/works/{workID}", collections.RemoveWork)
+	// Works
+	authed.HandleFunc("GET /api/works", works.List)
+	authed.HandleFunc("GET /api/works/search", works.Search)
+	authed.HandleFunc("GET /api/works/{id}", works.Get)
+	authed.HandleFunc("PUT /api/works/{id}", works.Update)
+	authed.HandleFunc("DELETE /api/works/{id}", works.Delete)
 
-	// ── Metadata ─────────────────────────────────────────────────────────
-	mux.HandleFunc("POST /api/metadata/refresh/{workID}", meta.Refresh)
-	mux.HandleFunc("GET /api/metadata/tasks/{workID}", meta.GetTasks)
-	mux.HandleFunc("POST /api/metadata/apply/{taskID}", meta.ApplyCandidate)
-	mux.HandleFunc("GET /api/metadata/review", meta.ReviewQueue)
+	// Contributors
+	authed.HandleFunc("GET /api/contributors", contribs.List)
+	authed.HandleFunc("GET /api/contributors/{id}", contribs.Get)
 
-	// ── Scan ─────────────────────────────────────────────────────────────
-	mux.HandleFunc("POST /api/scan", scanH.TriggerScan)
-	mux.HandleFunc("GET /api/scan/status", scanH.Status)
+	// Series
+	authed.HandleFunc("GET /api/series", seriesH.List)
+	authed.HandleFunc("GET /api/series/{id}", seriesH.Get)
 
-	// ── Covers ───────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/works/{id}/covers", covers.List)
-	mux.HandleFunc("PUT /api/works/{id}/covers/select", covers.Select)
+	// Tags
+	authed.HandleFunc("GET /api/tags", tagsH.List)
+	authed.HandleFunc("GET /api/tags/{id}", tagsH.Get)
 
-	// ── Settings ─────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/settings", settings.List)
-	mux.HandleFunc("PUT /api/settings", settings.Update)
+	// Collections
+	authed.HandleFunc("GET /api/collections", collections.List)
+	authed.HandleFunc("POST /api/collections", collections.Create)
+	authed.HandleFunc("GET /api/collections/{id}", collections.Get)
+	authed.HandleFunc("PUT /api/collections/{id}", collections.Update)
+	authed.HandleFunc("DELETE /api/collections/{id}", collections.Delete)
+	authed.HandleFunc("POST /api/collections/{id}/works", collections.AddWork)
+	authed.HandleFunc("DELETE /api/collections/{id}/works/{workID}", collections.RemoveWork)
 
-	// ── Dashboard ────────────────────────────────────────────────────────
-	mux.HandleFunc("GET /api/dashboard", dashboard.Get)
+	// Metadata
+	authed.HandleFunc("POST /api/metadata/refresh/{workID}", meta.Refresh)
+	authed.HandleFunc("GET /api/metadata/tasks/{workID}", meta.GetTasks)
+	authed.HandleFunc("POST /api/metadata/apply/{taskID}", meta.ApplyCandidate)
+	authed.HandleFunc("GET /api/metadata/review", meta.ReviewQueue)
+
+	// Scan
+	authed.HandleFunc("POST /api/scan", scanH.TriggerScan)
+	authed.HandleFunc("GET /api/scan/status", scanH.Status)
+
+	// Covers
+	authed.HandleFunc("GET /api/works/{id}/covers", covers.List)
+	authed.HandleFunc("PUT /api/works/{id}/covers/select", covers.Select)
+
+	// Settings
+	authed.HandleFunc("GET /api/settings", settings.List)
+	authed.HandleFunc("PUT /api/settings", settings.Update)
+
+	// Dashboard
+	authed.HandleFunc("GET /api/dashboard", dashboard.Get)
+
+	// Mount authenticated routes
+	mux.Handle("/api/", requireAuth(authed))
+
+	// ── Admin-only routes ───────────────────────────────────────────────
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("GET /api/admin/users", usersH.List)
+	adminMux.HandleFunc("POST /api/admin/users", usersH.Create)
+	adminMux.HandleFunc("GET /api/admin/users/{id}", usersH.Get)
+	adminMux.HandleFunc("PUT /api/admin/users/{id}", usersH.Update)
+	adminMux.HandleFunc("DELETE /api/admin/users/{id}", usersH.Delete)
+
+	mux.Handle("/api/admin/", requireAuth(requireAdmin(adminMux)))
 
 	// Wrap with middleware
 	var handler http.Handler = mux
@@ -211,6 +242,7 @@ func corsMiddleware(baseURL string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Access-Control-Max-Age", "86400")
 			}
 
