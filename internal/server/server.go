@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -40,6 +41,20 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 	// Serve the embedded Svelte SPA for all non-API routes.
 	if webFS != nil {
 		fileServer := http.FileServer(http.FS(webFS))
+		serveIndex := func(w http.ResponseWriter, r *http.Request) {
+			f, err := webFS.Open("index.html")
+			if err != nil {
+				http.Error(w, "index not found", http.StatusInternalServerError)
+				return
+			}
+			defer f.Close()
+
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if _, err := io.Copy(w, f); err != nil {
+				slog.Error("failed to serve index.html", "error", err)
+			}
+		}
+
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
@@ -59,6 +74,11 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 				// Check if the file exists in the embedded FS.
 				f, err := webFS.Open(strings.TrimPrefix(path, "/"))
 				if err == nil {
+					if stat, statErr := f.Stat(); statErr == nil && stat.IsDir() {
+						f.Close()
+						serveIndex(w, r)
+						return
+					}
 					f.Close()
 					fileServer.ServeHTTP(w, r)
 					return

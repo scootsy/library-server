@@ -1,1 +1,0 @@
-import{o as y,d as o,H as u,p as _,h as t,C as p,q as i,m as l,k as d,n as g,v as m}from"./Cu_n36LZ.js";function C(n,r){let s=null,E=t;var a;if(t){s=g;for(var e=m(document.head);e!==null&&(e.nodeType!==p||e.data!==n);)e=i(e);if(e===null)l(!1);else{var f=i(e);e.remove(),d(f)}}t||(a=document.head.appendChild(y()));try{o(()=>r(a),u|_)}finally{E&&(l(!0),d(s))}}export{C as h};
