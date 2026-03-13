@@ -90,6 +90,9 @@ func TestStaticFileServed(t *testing.T) {
 	if !strings.Contains(body, "console.log") {
 		t.Errorf("GET /assets/app.js body = %q, want it to contain JS content", body)
 	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "" {
+		t.Errorf("GET /assets/app.js Cache-Control = %q, want empty", cacheControl)
+	}
 }
 
 func TestSPAFallbackServesIndexForUnknownRoutes(t *testing.T) {
@@ -114,6 +117,27 @@ func TestSPAFallbackServesIndexForUnknownRoutes(t *testing.T) {
 		if loc := rec.Header().Get("Location"); loc != "" {
 			t.Errorf("GET %s returned Location header %q, want empty", route, loc)
 		}
+		if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+			t.Errorf("GET %s Cache-Control = %q, want %q", route, cacheControl, "no-store")
+		}
+	}
+}
+
+func TestDirectoryPathUsesSPAFallbackNoStore(t *testing.T) {
+	srv := newTestServer(newTestFS())
+
+	req := httptest.NewRequest("GET", "/assets", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /assets returned status %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), "SPA") {
+		t.Errorf("GET /assets body = %q, want it to contain %q", rec.Body.String(), "SPA")
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Errorf("GET /assets Cache-Control = %q, want %q", cacheControl, "no-store")
 	}
 }
 

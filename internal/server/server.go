@@ -54,6 +54,10 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 				slog.Error("failed to serve index.html", "error", err)
 			}
 		}
+		serveSPAIndexFallback := func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			serveIndex(w, r)
+		}
 
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
@@ -76,7 +80,7 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 				if err == nil {
 					if stat, statErr := f.Stat(); statErr == nil && stat.IsDir() {
 						f.Close()
-						serveIndex(w, r)
+						serveSPAIndexFallback(w, r)
 						return
 					}
 					f.Close()
@@ -84,8 +88,7 @@ func New(cfg *config.Config, apiHandler http.Handler, webFS fs.FS) *Server {
 					return
 				}
 				// File not found — serve index.html for SPA client-side routing.
-				// Use http.ServeFileFS to avoid the FileServer redirect loop.
-				http.ServeFileFS(w, r, webFS, "index.html")
+				serveSPAIndexFallback(w, r)
 				return
 			}
 
