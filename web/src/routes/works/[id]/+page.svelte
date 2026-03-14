@@ -477,17 +477,19 @@
 
 					{#if sortedContributors.length}
 						<div class="contributors-row">
-							{#each sortedContributors as contributor}
+							<span class="by-prefix">by</span>
+							{#each sortedContributors as contributor, i}
+								{#if i > 0}<span class="contributor-separator">,&nbsp;</span>{/if}
 								<a href={buildBrowseLink(contributor.name)} class="contributor-chip">
 									<span>{contributor.name}</span>
 									{#if !isRole(contributor.role, ['author', 'writer'])}
-										<small>{contributor.role}</small>
+										<small>({contributor.role})</small>
 									{/if}
 								</a>
 							{/each}
 						</div>
 					{:else}
-						<p class="muted">No contributors listed yet.</p>
+						<p class="unknown-author">Author unknown</p>
 					{/if}
 				</div>
 
@@ -531,10 +533,12 @@
 
 				<div class="metadata-grid">
 					{#each metadataItems as item}
-						<div class="meta-cell">
-							<span class="meta-label">{item.label}</span>
-							<span class="meta-value">{item.value}</span>
-						</div>
+						{#if item.value !== '--'}
+							<div class="meta-cell">
+								<span class="meta-label">{item.label}</span>
+								<span class="meta-value">{item.value}</span>
+							</div>
+						{/if}
 					{/each}
 				</div>
 
@@ -588,7 +592,7 @@
 					{/if}
 				</div>
 			{:else}
-				<p class="empty-state">No description available. Use Fetch Metadata to pull one in.</p>
+				<p class="empty-state">No description yet — click <strong>Fetch Metadata</strong> above to pull in a book summary.</p>
 			{/if}
 		</section>
 
@@ -834,9 +838,15 @@
 
 	.hero-card {
 		display: grid;
-		grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-		gap: 1.5rem;
-		padding: 1.5rem;
+		grid-template-columns: 280px minmax(0, 1fr);
+		gap: 2rem;
+		padding: 2rem;
+		background:
+			linear-gradient(180deg, rgba(108, 140, 255, 0.06), rgba(108, 140, 255, 0) 200px),
+			var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 18px;
+		box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
 	}
 
 	.cover-column {
@@ -846,44 +856,52 @@
 	}
 
 	.cover-frame {
-		background: #11151f;
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		border-radius: 20px;
-		padding: 0.85rem;
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+		background: transparent;
+		border: none;
+		border-radius: 8px;
+		overflow: hidden;
+		aspect-ratio: auto;
+		box-shadow:
+			0 4px 6px rgba(0, 0, 0, 0.4),
+			0 12px 28px rgba(0, 0, 0, 0.35),
+			0 1px 0 rgba(255, 255, 255, 0.06) inset;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
 
-	.cover-image,
-	.cover-placeholder {
-		display: block;
-		width: 100%;
-		aspect-ratio: 2 / 3;
-		border-radius: 14px;
+	.cover-frame:hover {
+		transform: translateY(-2px);
+		box-shadow:
+			0 8px 16px rgba(0, 0, 0, 0.5),
+			0 20px 40px rgba(0, 0, 0, 0.4),
+			0 1px 0 rgba(255, 255, 255, 0.06) inset;
 	}
 
 	.cover-image {
-		object-fit: cover;
-		box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+		width: 100%;
+		height: auto;
+		display: block;
+		border-radius: 8px;
 	}
 
 	.cover-placeholder {
-		display: grid;
-		place-items: center;
-		padding: 1rem;
+		width: 100%;
+		aspect-ratio: 2 / 3;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1.5rem;
+		background: linear-gradient(145deg, #1e2233, #2a2f45);
+		border-radius: 8px;
 		text-align: center;
-		font-size: 1.2rem;
-		font-weight: 700;
-		line-height: 1.25;
-		color: var(--text);
-		background:
-			radial-gradient(circle at top, rgba(87, 199, 190, 0.35), transparent 45%),
-			linear-gradient(160deg, rgba(108, 140, 255, 0.35), rgba(26, 31, 46, 0.92));
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		line-height: 1.4;
 	}
 
 	.cover-format-stack,
 	.cover-source-list,
 	.status-row,
-	.tag-row,
 	.rating-sources {
 		display: flex;
 		flex-wrap: wrap;
@@ -904,20 +922,38 @@
 		letter-spacing: 0.03em;
 	}
 
+	.cover-format-stack {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		justify-content: center;
+	}
+
 	.format-pill {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
-		color: var(--text);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.3rem 0.65rem;
+		border-radius: 6px;
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		background: rgba(255, 255, 255, 0.06);
+		color: var(--text-muted);
+		border: 1px solid rgba(255, 255, 255, 0.08);
 	}
 
 	.format-pill.primary {
-		background: rgba(108, 140, 255, 0.18);
-		border-color: rgba(108, 140, 255, 0.4);
+		background: rgba(108, 140, 255, 0.15);
+		color: #b8c9ff;
+		border-color: rgba(108, 140, 255, 0.25);
 	}
 
 	.format-pill strong {
-		font-size: 0.67rem;
-		color: #c7d2ff;
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		opacity: 0.7;
 	}
 
 	.group-label,
@@ -964,44 +1000,95 @@
 	}
 
 	.series-link {
-		font-size: 0.88rem;
-		font-weight: 600;
-		color: #87d7d2;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: var(--primary);
+		text-decoration: none;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		margin-bottom: 0.4rem;
+	}
+
+	.series-link:hover {
+		color: var(--primary-hover);
+		text-decoration: underline;
+	}
+
+	.series-link span {
+		color: var(--text-muted);
+		font-weight: 400;
 	}
 
 	h1 {
-		font-size: clamp(2rem, 3.5vw, 3rem);
-		line-height: 1.05;
+		font-size: 2rem;
+		font-weight: 800;
+		line-height: 1.2;
+		color: #ffffff;
+		letter-spacing: -0.02em;
+		margin: 0;
 	}
 
 	.subtitle {
-		font-size: 1rem;
+		font-size: 1.15rem;
 		color: var(--text-muted);
-		max-width: 65ch;
+		font-style: italic;
+		margin-top: 0.35rem;
+		font-weight: 400;
 	}
 
 	.contributors-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.55rem;
+		align-items: baseline;
+		gap: 0.25rem 0.5rem;
+		margin-top: 0.5rem;
+		font-size: 1.1rem;
+	}
+
+	.by-prefix {
+		color: var(--text-muted);
+		font-weight: 400;
+		font-size: 1rem;
+	}
+
+	.contributor-separator {
+		color: var(--text-muted);
 	}
 
 	.contributor-chip {
+		color: var(--primary);
+		text-decoration: none;
+		font-weight: 500;
+		transition: color 0.15s ease;
 		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-		padding: 0.45rem 0.8rem;
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
-		color: var(--text);
+		align-items: baseline;
+		gap: 0.3rem;
+		background: none;
+		border: none;
+		padding: 0;
+		border-radius: 0;
+	}
+
+	.contributor-chip:hover {
+		color: var(--primary-hover);
+		text-decoration: underline;
+		background: none;
 	}
 
 	.contributor-chip small {
-		color: #9bb2ff;
-		text-transform: uppercase;
-		font-size: 0.65rem;
-		letter-spacing: 0.04em;
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		font-weight: 400;
+	}
+
+	.unknown-author {
+		color: var(--text-muted);
+		font-style: italic;
+		font-size: 1rem;
+		margin-top: 0.5rem;
 	}
 
 	.status-pill {
@@ -1023,28 +1110,38 @@
 	}
 
 	.rating-row {
-		display: grid;
-		gap: 0.9rem;
-		padding: 1rem 1.1rem;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		border-radius: 16px;
+		display: flex;
+		align-items: center;
+		gap: 1.25rem;
+		margin-top: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.stars {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		flex-wrap: wrap;
+		gap: 0.15rem;
 	}
 
 	.star {
-		color: rgba(255, 255, 255, 0.18);
-		font-size: 1rem;
+		font-size: 1.15rem;
+		color: rgba(255, 255, 255, 0.15);
 	}
 
 	.star.filled {
-		color: #f6c65b;
+		color: #fbbf24;
+		text-shadow: 0 0 6px rgba(251, 191, 36, 0.3);
+	}
+
+	.stars strong {
+		margin-left: 0.5rem;
+		font-size: 1.05rem;
+		color: var(--text);
+	}
+
+	.stars .muted {
+		font-size: 0.82rem;
+		margin-left: 0.25rem;
 	}
 
 	.rating-source {
@@ -1075,40 +1172,58 @@
 		font-weight: 800;
 	}
 
+	.tag-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+		margin-top: 0.75rem;
+	}
+
 	.tag-pill {
-		background: rgba(87, 199, 190, 0.14);
-		border: 1px solid rgba(87, 199, 190, 0.28);
-		color: #a7ece6;
+		display: inline-block;
+		padding: 0.35rem 0.85rem;
+		border-radius: 999px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		background: rgba(108, 140, 255, 0.12);
+		color: rgba(108, 140, 255, 0.9);
+		border: 1px solid rgba(108, 140, 255, 0.2);
+		text-decoration: none;
+		transition: background 0.15s ease, border-color 0.15s ease;
+	}
+
+	.tag-pill:hover {
+		background: rgba(108, 140, 255, 0.2);
+		border-color: rgba(108, 140, 255, 0.35);
 	}
 
 	.metadata-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-		gap: 0.8rem;
+		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+		gap: 0.6rem 1.25rem;
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
 	}
 
 	.meta-cell {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
-		padding: 0.9rem 1rem;
-		border-radius: 14px;
-		background: rgba(15, 18, 25, 0.58);
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		min-height: 82px;
+		gap: 0.2rem;
 	}
 
 	.meta-label {
 		font-size: 0.72rem;
+		font-weight: 600;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
 	}
 
 	.meta-value {
-		font-size: 0.96rem;
-		font-weight: 600;
-		line-height: 1.35;
-		word-break: break-word;
+		font-size: 0.92rem;
+		color: var(--text);
+		font-weight: 500;
 	}
 
 	.action-row {
@@ -1151,14 +1266,28 @@
 	}
 
 	.btn-download {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		color: var(--text);
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.15rem;
+		padding: 0.7rem 1.25rem;
+		border-radius: 12px;
+		font-weight: 600;
+		background: rgba(34, 197, 94, 0.14);
+		border: 1px solid rgba(34, 197, 94, 0.3);
+		color: #8ee3b2;
+		text-decoration: none;
+		transition: background 0.15s ease;
+	}
+
+	.btn-download:hover {
+		background: rgba(34, 197, 94, 0.22);
 	}
 
 	.btn-download span {
-		color: var(--text-muted);
-		font-size: 0.78rem;
+		font-size: 0.75rem;
+		font-weight: 400;
+		opacity: 0.8;
 	}
 
 	.btn-download:disabled,
@@ -1235,13 +1364,19 @@
 		margin-bottom: 0.15rem;
 	}
 
+	.description-panel {
+		padding: 1.75rem;
+	}
+
 	.description-body {
 		color: var(--text);
-		line-height: 1.7;
+		line-height: 1.8;
+		font-size: 0.98rem;
+		max-width: 72ch;
 	}
 
 	.description-body :global(p + p) {
-		margin-top: 1rem;
+		margin-top: 1.1rem;
 	}
 
 	.empty-state {
@@ -1528,7 +1663,8 @@
 		}
 
 		.cover-column {
-			max-width: 320px;
+			max-width: 280px;
+			margin: 0 auto;
 		}
 	}
 
