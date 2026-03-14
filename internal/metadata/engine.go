@@ -218,6 +218,56 @@ func (e *Engine) fetchAndScore(workID string) ([]ScoredCandidate, error) {
 	return scored, nil
 }
 
+// FetchAllSources queries every enabled source and returns their top
+// candidate for a work.
+func (e *Engine) FetchAllSources(ctx context.Context, workID string) (map[string]*sources.Candidate, error) {
+	query, err := e.buildQuery(workID)
+	if err != nil {
+		return nil, fmt.Errorf("building query: %w", err)
+	}
+
+	results := make(map[string]*sources.Candidate)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, src := range e.sources {
+		src := src
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			srcCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+
+			candidates, err := src.Search(srcCtx, *query)
+			if err != nil {
+				slog.Warn("source fetch failed", "source", src.Name(), "work_id", workID, "error", err)
+				return
+			}
+			if len(candidates) == 0 {
+				return
+			}
+
+			top := &candidates[0]
+			if top.ExternalID != "" {
+				full, err := src.FetchByID(srcCtx, "id", top.ExternalID)
+				if err != nil {
+					slog.Warn("source fetch by id failed", "source", src.Name(), "work_id", workID, "external_id", top.ExternalID, "error", err)
+				} else if full != nil {
+					top = full
+				}
+			}
+
+			mu.Lock()
+			results[src.Name()] = top
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+	return results, nil
+}
+
 // querySource queries a single source and caches the raw response.
 func (e *Engine) querySource(ctx context.Context, src sources.MetadataSource, query sources.Query, workID string) ([]sources.Candidate, error) {
 	// Check source cache first

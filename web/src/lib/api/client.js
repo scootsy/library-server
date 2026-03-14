@@ -200,6 +200,18 @@ export function getReviewQueue(limit = 50, offset = 0) {
 	return request(`/metadata/review?limit=${limit}&offset=${offset}`);
 }
 
+export function fetchMetadataSources(workId) {
+	return request(`/works/${workId}/metadata/fetch`, { method: 'POST' });
+}
+
+export function patchWorkMetadata(workId, fields) {
+	return request(`/works/${workId}/metadata`, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(fields)
+	});
+}
+
 // ── Scan ────────────────────────────────────────────────────────────────────
 export function triggerScan() {
 	return request('/scan', { method: 'POST' });

@@ -396,6 +396,7 @@ func UpdateWorkMetadata(db *sql.DB, id string, fields map[string]any) error {
 		"title": true, "sort_title": true, "subtitle": true,
 		"language": true, "publisher": true, "publish_date": true,
 		"description": true, "description_format": true,
+		"page_count": true, "duration_seconds": true,
 	}
 
 	var setClauses []string

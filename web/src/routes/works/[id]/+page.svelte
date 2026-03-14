@@ -6,6 +6,8 @@
 		getWork,
 		getWorkCoverUrl,
 		getWorkFileDownloadUrl,
+		fetchMetadataSources,
+		patchWorkMetadata,
 		refreshMetadata,
 		selectCover,
 		updateWork
@@ -34,6 +36,13 @@
 	let menuOpen = $state(false);
 	let editorOpen = $state(false);
 	let coverLoadFailed = $state(false);
+
+	let selectorOpen = $state(false);
+	let selectorLoading = $state(false);
+	let selectorError = $state(null);
+	let selectorData = $state(null);
+	let selectedFields = $state({});
+	let applyingMetadata = $state(false);
 
 	let editor = $state({
 		title: '',
@@ -174,11 +183,27 @@
 
 	async function handleFetchMetadata() {
 		menuOpen = false;
+		selectorOpen = true;
+		selectorLoading = true;
+		selectorError = null;
+		selectorData = null;
 
+		try {
+			selectorData = await fetchMetadataSources(workId);
+			initializeSelections();
+		} catch (e) {
+			selectorError = e.message;
+		} finally {
+			selectorLoading = false;
+		}
+	}
+
+	async function handleRefreshMetadata() {
+		menuOpen = false;
 		try {
 			await refreshMetadata(workId);
 			await loadTasks();
-			setMessage('Metadata fetch queued');
+			setMessage('Metadata refresh queued');
 		} catch (e) {
 			setMessage(`Error: ${e.message}`, 5000);
 		}
@@ -374,6 +399,130 @@
 		return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 	}
 
+
+	const selectorFieldRows = [
+		{ field: 'title', label: 'Title' },
+		{ field: 'subtitle', label: 'Subtitle' },
+		{ field: 'authors', label: 'Author(s)' },
+		{ field: 'narrators', label: 'Narrator(s)' },
+		{ field: 'description', label: 'Description' },
+		{ field: 'publisher', label: 'Publisher' },
+		{ field: 'publish_date', label: 'Published' },
+		{ field: 'language', label: 'Language' },
+		{ field: 'page_count', label: 'Page Count' },
+		{ field: 'isbn', label: 'ISBN' },
+		{ field: 'series', label: 'Series' },
+		{ field: 'series_position', label: 'Series Position' },
+		{ field: 'tags', label: 'Tags / Genres' },
+		{ field: 'cover_url', label: 'Cover Image' },
+		{ field: 'duration_seconds', label: 'Duration' }
+	];
+
+	function initializeSelections() {
+		if (!selectorData) return;
+		const fields = selectorFieldRows.map((row) => row.field);
+		const selections = {};
+		for (const field of fields) {
+			const currentVal = selectorData.current[field];
+			const currentEmpty = !currentVal || currentVal === '' || (Array.isArray(currentVal) && currentVal.length === 0) || currentVal === 0;
+			if (!currentEmpty) {
+				selections[field] = 'current';
+			} else {
+				let found = false;
+				for (const [sourceName, sourceData] of Object.entries(selectorData.sources || {})) {
+					const val = sourceData[field];
+					if (val && val !== '' && !(Array.isArray(val) && val.length === 0) && val !== 0) {
+						selections[field] = sourceName;
+						found = true;
+						break;
+					}
+				}
+				if (!found) selections[field] = 'current';
+			}
+		}
+		selectedFields = selections;
+	}
+
+	function selectAllFromSource(sourceName) {
+		if (!selectorData) return;
+		const sourceData = sourceName === 'current' ? selectorData.current : selectorData.sources[sourceName];
+		if (!sourceData) return;
+		const newSelections = { ...selectedFields };
+		for (const [field, value] of Object.entries(sourceData)) {
+			if (value && value !== '' && !(Array.isArray(value) && value.length === 0) && value !== 0) {
+				newSelections[field] = sourceName;
+			}
+		}
+		selectedFields = newSelections;
+	}
+
+	async function applySelectedMetadata() {
+		if (!selectorData) return;
+		applyingMetadata = true;
+		const patch = {};
+		for (const [field, sourceName] of Object.entries(selectedFields)) {
+			if (sourceName === 'current') continue;
+			const sourceData = selectorData.sources[sourceName];
+			if (!sourceData) continue;
+			const value = sourceData[field];
+			if (value !== undefined && value !== null) {
+				patch[field === 'isbn' ? 'isbn_13' : field] = value;
+			}
+		}
+		if (!Object.keys(patch).length) {
+			selectorOpen = false;
+			setMessage('No changes selected', 2000);
+			applyingMetadata = false;
+			return;
+		}
+		try {
+			await patchWorkMetadata(workId, patch);
+			selectorOpen = false;
+			await loadWork();
+			setMessage('Metadata updated from selected sources', 3000);
+		} catch (e) {
+			selectorError = e.message;
+		} finally {
+			applyingMetadata = false;
+		}
+	}
+
+	function displayValue(val) {
+		if (val === null || val === undefined || val === '') return '—';
+		if (typeof val === 'number' && val === 0) return '—';
+		if (Array.isArray(val)) return val.length ? val.join(', ') : '—';
+		return String(val);
+	}
+
+	function truncate(str, len) {
+		if (!str || str.length <= len) return str || '—';
+		return str.substring(0, len) + '…';
+	}
+
+	function countSourceFields(sourceName) {
+		const sourceData = selectorData?.sources?.[sourceName];
+		if (!sourceData) return 0;
+		let count = 0;
+		for (const val of Object.values(sourceData)) {
+			if (val && val !== '' && !(Array.isArray(val) && val.length === 0) && val !== 0) count++;
+		}
+		return count;
+	}
+
+	function hasDisagreement(field) {
+		if (!selectorData) return false;
+		const values = new Set();
+		const curVal = JSON.stringify(selectorData.current[field] ?? '');
+		values.add(curVal);
+		for (const sourceData of Object.values(selectorData.sources || {})) {
+			const srcVal = sourceData[field];
+			if (srcVal && srcVal !== '' && !(Array.isArray(srcVal) && srcVal.length === 0) && srcVal !== 0) {
+				values.add(JSON.stringify(srcVal));
+			}
+		}
+		return values.size > 1;
+	}
+
 	function formatSourceName(source) {
 		return (source || '')
 			.split(/[_-]/g)
@@ -565,7 +714,7 @@
 
 						{#if menuOpen}
 							<div class="menu-panel">
-								<button type="button" onclick={handleFetchMetadata}>Refresh Metadata</button>
+								<button type="button" onclick={handleRefreshMetadata}>Refresh Metadata</button>
 								<button type="button" onclick={openEditor}>Edit Metadata</button>
 								<button type="button" class="danger-text" onclick={handleDeleteWork}>Delete Work</button>
 							</div>
@@ -793,6 +942,49 @@
 					{/each}
 				</div>
 			</details>
+		{/if}
+
+		{#if selectorOpen}
+			<div class="selector-overlay" onclick={() => { if (!applyingMetadata) selectorOpen = false; }}>
+				<div class="selector-panel" onclick={(e) => e.stopPropagation()}>
+					<div class="selector-header">
+						<div>
+							<h2>Select Metadata</h2>
+							<p class="selector-subtitle">Compare metadata from multiple sources. Select the best value for each field.</p>
+						</div>
+						<button type="button" class="selector-close" onclick={() => selectorOpen = false} disabled={applyingMetadata}>✕</button>
+					</div>
+					{#if selectorLoading}
+						<div class="selector-loading"><p>Fetching metadata from all sources...</p></div>
+					{:else if selectorError}
+						<div class="selector-error"><p>Error: {selectorError}</p><button type="button" class="btn-secondary" onclick={handleFetchMetadata}>Retry</button></div>
+					{:else if selectorData}
+						<div class="selector-source-bar">
+							<span class="source-bar-label">Select all from:</span>
+							<button type="button" class="source-select-btn" onclick={() => selectAllFromSource('current')}>Current</button>
+							{#each Object.keys(selectorData.sources) as sourceName}
+								<button type="button" class="source-select-btn" onclick={() => selectAllFromSource(sourceName)}>{formatSourceName(sourceName)} <small>({countSourceFields(sourceName)} fields)</small></button>
+							{/each}
+						</div>
+						<div class="selector-fields">
+							{#each selectorFieldRows as row}
+								<div class="selector-row" class:highlight={hasDisagreement(row.field)}>
+									<div class="field-label">{row.label}</div>
+									<div class="field-options">
+										<label class="field-option" class:selected={selectedFields[row.field] === 'current'}><input type="radio" name={row.field} value="current" bind:group={selectedFields[row.field]} /><span class="option-source">Current</span><span class="option-value">{displayValue(selectorData.current[row.field])}</span></label>
+										{#each Object.entries(selectorData.sources) as [sourceName, sourceData]}
+											{@const val = sourceData[row.field]}
+											{@const hasValue = val && val !== '' && !(Array.isArray(val) && val.length === 0) && val !== 0}
+											<label class="field-option" class:selected={selectedFields[row.field] === sourceName} class:disabled={!hasValue}><input type="radio" name={row.field} value={sourceName} bind:group={selectedFields[row.field]} disabled={!hasValue} /><span class="option-source">{formatSourceName(sourceName)}</span><span class="option-value">{#if !hasValue}<span class="no-data">—</span>{:else if row.field === 'description'}<span class="description-preview">{truncate(String(val), 120)}</span>{:else}<span>{displayValue(val)}</span>{/if}</span></label>
+										{/each}
+									</div>
+								</div>
+							{/each}
+						</div>
+						<div class="selector-footer"><button type="button" class="btn-secondary" onclick={() => selectorOpen = false} disabled={applyingMetadata}>Cancel</button><button type="button" class="btn-primary" onclick={applySelectedMetadata} disabled={applyingMetadata}>{applyingMetadata ? 'Applying...' : 'Apply Selected'}</button></div>
+					{/if}
+				</div>
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -1692,7 +1884,36 @@
 		}
 	}
 
+
+	.selector-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+	.selector-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 18px; width: 100%; max-width: 960px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
+	.selector-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 1.5rem 1.5rem 1rem; border-bottom: 1px solid var(--border); }
+	.selector-header h2 { font-size: 1.25rem; font-weight: 700; margin: 0; }
+	.selector-subtitle { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; }
+	.selector-close { background: none; border: none; color: var(--text-muted); font-size: 1.25rem; cursor: pointer; padding: 0.25rem; line-height: 1; }
+	.selector-loading, .selector-error { padding: 3rem 1.5rem; text-align: center; color: var(--text-muted); }
+	.selector-error { color: #ffb2b2; }
+	.selector-source-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; background: rgba(0, 0, 0, 0.15); }
+	.source-bar-label { font-size: 0.82rem; color: var(--text-muted); font-weight: 500; margin-right: 0.25rem; }
+	.source-select-btn { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.75rem; border-radius: 8px; font-size: 0.82rem; font-weight: 600; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); cursor: pointer; }
+	.selector-fields { overflow-y: auto; flex: 1; padding: 0.5rem 0; }
+	.selector-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.75rem; padding: 0.75rem 1.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.03); align-items: start; }
+	.selector-row.highlight { background: rgba(245, 158, 11, 0.04); border-left: 3px solid rgba(245, 158, 11, 0.4); }
+	.field-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.55rem; }
+	.field-options { display: flex; flex-direction: column; gap: 0.35rem; }
+	.field-option { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem 0.65rem; border-radius: 10px; cursor: pointer; border: 1px solid transparent; transition: background 0.12s ease, border-color 0.12s ease; }
+	.field-option.selected { background: rgba(108, 140, 255, 0.1); border-color: rgba(108, 140, 255, 0.25); }
+	.field-option.disabled { opacity: 0.35; cursor: not-allowed; }
+	.option-source { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); min-width: 90px; flex-shrink: 0; }
+	.option-value { font-size: 0.88rem; color: var(--text); word-break: break-word; line-height: 1.4; }
+	.description-preview, .tags-preview { font-size: 0.82rem; color: var(--text-muted); }
+	.selector-footer { display: flex; justify-content: flex-end; gap: 0.65rem; padding: 1rem 1.5rem; border-top: 1px solid var(--border); }
+
 	@media (max-width: 640px) {
+		.selector-row { grid-template-columns: 1fr; }
+		.field-label { padding-top: 0; margin-bottom: 0.25rem; }
+		.selector-panel { max-height: 95vh; border-radius: 12px; }
+		.selector-overlay { padding: 0.5rem; }
 		.hero-card,
 		.panel {
 			padding: 1rem;

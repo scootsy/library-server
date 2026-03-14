@@ -95,6 +95,8 @@ func NewRouter(deps *Dependencies) http.Handler {
 	authed.HandleFunc("GET /api/metadata/tasks/{workID}", meta.GetTasks)
 	authed.HandleFunc("POST /api/metadata/apply/{taskID}", meta.ApplyCandidate)
 	authed.HandleFunc("GET /api/metadata/review", meta.ReviewQueue)
+	authed.HandleFunc("POST /api/works/{id}/metadata/fetch", meta.FetchFromSources)
+	authed.HandleFunc("PATCH /api/works/{id}/metadata", meta.PatchMetadata)
 
 	// Scan
 	authed.HandleFunc("POST /api/scan", scanH.TriggerScan)

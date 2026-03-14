@@ -200,3 +200,12 @@ func DeleteWorkContributors(db *sql.DB, workID string) error {
 	}
 	return nil
 }
+
+// DeleteWorkContributorsByRole removes contributor links for a work with a specific role.
+func DeleteWorkContributorsByRole(db *sql.DB, workID, role string) error {
+	_, err := db.Exec(`DELETE FROM work_contributors WHERE work_id = ? AND role = ?`, workID, role)
+	if err != nil {
+		return fmt.Errorf("deleting work_contributors for %q role %q: %w", workID, role, err)
+	}
+	return nil
+}
