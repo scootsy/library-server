@@ -213,12 +213,118 @@ The sidecar lives alongside the book’s media files in whatever directory struc
 
   // === MEDIA OVERLAY ===
   // Only present when an EPUB3 with media overlays exists.
-  // This references a pre-aligned file (created externally by Storyteller or similar).
+  // This references a pre-aligned file (created externally by Storyteller, Readaloud, etc.).
+  // The file is a standard EPUB3 whose spine items each have a SMIL media overlay document
+  // that synchronises text fragments with audio clips — no separate audiobook file is needed.
   "media_overlay": {
     "aligned_epub_filename": "The Way of Kings - Aligned.epub",
     "alignment_tool": "storyteller",
     "alignment_version": "0.14.0",
-    "aligned_at": "2026-02-20T00:00:00Z"
+    "aligned_at": "2026-02-20T00:00:00Z",
+
+    // Narrator identity for the overlay audio.  May differ from contributors[].narrator
+    // when the commercial narrator and the overlay narrator are different people.
+    "overlay_narrator_name": "Michael Kramer",
+    "overlay_narrator_language": "en-US",   // BCP-47
+    "overlay_duration_seconds": 187522,
+
+    // SMIL details — used by reading systems to select the correct highlight class
+    // and to report sync fidelity (word vs. sentence level).
+    "smil_version": "3.0",
+    "sync_granularity": "sentence",         // "word" | "sentence" | "paragraph"
+    "active_class": "-epub-media-overlay-active",
+    "playback_active_class": "-epub-media-overlay-playing"
+  },
+
+  // === ACCESSIBILITY ===
+  // EPUB Accessibility 1.1 metadata required by the EU Accessibility Act
+  // (EAA, Directive 2019/882) for ebooks published after 28 June 2025.
+  //
+  // Field names map directly to the schema.org / a11y vocabulary used in EPUB
+  // package documents and surfaced by the Readium AccessibilityMetadataDisplayGuide
+  // (eight display categories: WaysOfReading, Navigation, RichContent,
+  // AdditionalInformation, Hazards, Conformance, Legal, AccessibilitySummary).
+  //
+  // For aligned readalouds the minimum recommended set is:
+  //   access_modes:           ["textual", "visual", "auditory"]
+  //   access_modes_sufficient: [["textual"], ["auditory", "textual"]]
+  //   features:               [..., "synchronizedAudioText", "readingOrder",
+  //                            "structuralNavigation", "tableOfContents"]
+  "accessibility": {
+    // schema:accessMode — sensory modalities required to consume the content.
+    // Values: "textual", "visual", "auditory", "tactile", "colorDependent",
+    //         "chartOnVisual", "chemOnVisual", "diagramOnVisual", "mathOnVisual",
+    //         "musicOnVisual", "textOnVisual".
+    "access_modes": ["textual", "visual", "auditory"],
+
+    // schema:accessModeSufficient — sets of modes each sufficient for full access.
+    "access_modes_sufficient": [
+      ["textual"],
+      ["auditory", "textual"]
+    ],
+
+    // schema:accessibilityFeature — specific features that aid accessibility.
+    // Key tokens for aligned readalouds:
+    //   "synchronizedAudioText"   — SMIL media overlays align audio with text
+    //   "readingOrder"            — logical reading order is defined
+    //   "structuralNavigation"    — headings and landmarks are present
+    //   "tableOfContents"         — navigable TOC exists
+    //   "alternativeText"         — images carry alt text
+    //   "displayTransformability" — reflowable; font size/spacing adjustable
+    //   "printPageNumbers"        — page-break markers match the print edition
+    //   "SSML"                    — SSML attributes enhance TTS pronunciation
+    //   "ttsMarkup"               — general TTS markup present
+    //   "rubyAnnotations"         — ruby for CJK pronunciation
+    //   "longDescription"         — complex images have extended descriptions
+    //   "MathML"                  — math in MathML
+    //   "describedMath"           — math formulas described in prose
+    //   "transcript"              — text transcript for audio/video
+    //   "captions"                — captions for audio/video
+    "features": [
+      "synchronizedAudioText",
+      "readingOrder",
+      "structuralNavigation",
+      "tableOfContents",
+      "alternativeText",
+      "displayTransformability",
+      "printPageNumbers"
+    ],
+
+    // schema:accessibilityHazard — known hazards in the content.
+    // Values: "flashing", "motionSimulation", "sound",
+    //         "noFlashingHazard", "noMotionSimulationHazard", "noSoundHazard",
+    //         "none", "unknown".
+    "hazards": ["noFlashingHazard", "noMotionSimulationHazard", "noSoundHazard"],
+
+    // schema:accessibilitySummary — required human-readable prose that
+    // complements but does not duplicate the structured fields above.
+    // EU Accessibility Act and EPUB A11y 1.1 §4.1.4 both require this.
+    "summary": "This publication includes synchronised audio narration aligned to the text using EPUB3 Media Overlays (SMIL). All images carry alternative text. The text is fully reflowable with adjustable font size and spacing. Print page numbers are preserved for cross-format reference.",
+
+    // Conformance claim — required under EAA for books published after 28 June 2025.
+    // WCAG Level AA is the minimum level demanded by the EAA.
+    "conformance": {
+      // dcterms:conformsTo — full standard identifier string.
+      "standard": "EPUB Accessibility 1.1 - WCAG 2.1 Level AA",
+      "wcag_level": "AA",       // "A" | "AA" | "AAA"
+      "wcag_version": "2.1",    // "2.0" | "2.1" | "2.2"
+
+      // a11y:certifiedBy — name of the certifying organisation or individual.
+      "certifier": null,
+
+      // a11y:certifierCredential — URL of the certifier's accreditation.
+      "certifier_credential": null,
+
+      // a11y:certifierReport — URL of the full accessibility evaluation report.
+      "certifier_report": null,
+
+      // ISO 8601 date of certification.
+      "certification_date": null
+    },
+
+    // Optional: EAA Article 14 / national exemptions (e.g. micro-enterprise exemption).
+    // Free-text; not machine-actionable.
+    "legal_exemptions": []
   },
 
   // === LINKS ===
@@ -535,6 +641,56 @@ CREATE TABLE audiobook_chapters (
 );
 
 CREATE INDEX idx_chapters_work ON audiobook_chapters(work_id, index_position);
+
+-- ============================================================
+-- WORK ACCESSIBILITY
+-- EPUB Accessibility 1.1 metadata (EU Accessibility Act, EAA Directive 2019/882).
+-- One row per work. Slice fields are stored as JSON TEXT arrays.
+-- ============================================================
+
+CREATE TABLE work_accessibility (
+    work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
+
+    -- schema:accessMode — JSON array, e.g. '["textual","visual","auditory"]'
+    access_modes TEXT,
+
+    -- schema:accessModeSufficient — JSON array of arrays
+    -- e.g. '[["textual"],["auditory","textual"]]'
+    access_modes_sufficient TEXT,
+
+    -- schema:accessibilityFeature — JSON array of feature tokens.
+    -- Key token for aligned readalouds: "synchronizedAudioText".
+    features TEXT,
+
+    -- schema:accessibilityHazard — JSON array of hazard tokens.
+    hazards TEXT,
+
+    -- schema:accessibilitySummary — required human-readable prose.
+    summary TEXT,
+
+    -- Conformance claim (dcterms:conformsTo / a11y: vocabulary).
+    -- Required under the EAA for ebooks published after 28 June 2025.
+    conformance_standard     TEXT,  -- e.g. "EPUB Accessibility 1.1 - WCAG 2.1 Level AA"
+    wcag_level               TEXT,  -- "A" | "AA" | "AAA"  (EAA minimum is "AA")
+    wcag_version             TEXT,  -- "2.0" | "2.1" | "2.2"
+    certifier                TEXT,  -- a11y:certifiedBy
+    certifier_credential     TEXT,  -- a11y:certifierCredential URL
+    certifier_report         TEXT,  -- a11y:certifierReport URL
+    certification_date       TEXT,  -- YYYY-MM-DD
+
+    -- Media overlay / aligned readaloud specifics.
+    overlay_narrator_name     TEXT,
+    overlay_narrator_language TEXT,  -- BCP-47, e.g. "en-US"
+    overlay_duration_seconds  INTEGER,
+    smil_version              TEXT,  -- e.g. "3.0"
+    sync_granularity          TEXT,  -- "word" | "sentence" | "paragraph"
+    active_class              TEXT,  -- CSS class applied to the active text element
+    playback_active_class     TEXT   -- CSS class applied while the overlay is playing
+);
+
+CREATE INDEX idx_work_accessibility_wcag ON work_accessibility(wcag_level);
+CREATE INDEX idx_work_accessibility_smil ON work_accessibility(sync_granularity)
+    WHERE sync_granularity IS NOT NULL;
 
 -- ============================================================
 -- RATINGS (per-source)

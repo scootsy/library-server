@@ -19,6 +19,7 @@ type migration struct {
 var all = []migration{
 	{version: 1, apply: v1},
 	{version: 2, apply: v2},
+	{version: 3, apply: v3},
 }
 
 // Run executes any pending migrations against db.
@@ -425,6 +426,68 @@ func v1(tx *sql.Tx) error {
 func v2(tx *sql.Tx) error {
 	stmts := []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_work_type ON metadata_tasks(work_id, task_type)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("executing statement %q: %w", stmt[:min(60, len(stmt))], err)
+		}
+	}
+	return nil
+}
+
+// v3 adds the work_accessibility table for EPUB Accessibility 1.1 metadata
+// required by the EU Accessibility Act (EAA, Directive 2019/882).
+// It also adds SMIL media overlay detail fields for aligned readaloud works.
+func v3(tx *sql.Tx) error {
+	stmts := []string{
+		// ── WORK ACCESSIBILITY ────────────────────────────────────────────────
+		// One row per work. All schema.org / a11y vocabulary fields are stored as
+		// JSON TEXT arrays so they are human-readable in the sidecar and
+		// filterable by the application without extra junction tables.
+		`CREATE TABLE work_accessibility (
+			work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
+
+			-- schema:accessMode — JSON array, e.g. '["textual","visual"]'
+			access_modes TEXT,
+
+			-- schema:accessModeSufficient — JSON array of arrays
+			-- e.g. '[["textual"],["auditory","textual"]]'
+			access_modes_sufficient TEXT,
+
+			-- schema:accessibilityFeature — JSON array of feature tokens.
+			-- Key token for aligned readalouds: "synchronizedAudioText".
+			features TEXT,
+
+			-- schema:accessibilityHazard — JSON array of hazard tokens.
+			hazards TEXT,
+
+			-- schema:accessibilitySummary — human-readable prose (required by
+			-- EPUB Accessibility 1.1 §4.1.4 and the EU Accessibility Act).
+			summary TEXT,
+
+			-- Conformance claim (dcterms:conformsTo / a11y: vocabulary).
+			-- Required for books published after 28 June 2025 under the EAA.
+			conformance_standard     TEXT,  -- e.g. "EPUB Accessibility 1.1 - WCAG 2.1 Level AA"
+			wcag_level               TEXT,  -- "A", "AA", or "AAA" — EAA minimum is "AA"
+			wcag_version             TEXT,  -- "2.0", "2.1", or "2.2"
+			certifier                TEXT,  -- a11y:certifiedBy
+			certifier_credential     TEXT,  -- a11y:certifierCredential URL
+			certifier_report         TEXT,  -- a11y:certifierReport URL
+			certification_date       TEXT,  -- YYYY-MM-DD
+
+			-- Media overlay / aligned readaloud specific fields.
+			-- These complement the file-level fields in the sidecar media_overlay block.
+			overlay_narrator_name     TEXT,
+			overlay_narrator_language TEXT,  -- BCP-47, e.g. "en-US"
+			overlay_duration_seconds  INTEGER,
+			smil_version              TEXT,  -- e.g. "3.0"
+			sync_granularity          TEXT,  -- "word" | "sentence" | "paragraph"
+			active_class              TEXT,  -- CSS class applied to the active text element
+			playback_active_class     TEXT   -- CSS class applied while the overlay is playing
+		)`,
+		`CREATE INDEX idx_work_accessibility_wcag  ON work_accessibility(wcag_level)`,
+		`CREATE INDEX idx_work_accessibility_smil  ON work_accessibility(sync_granularity)
+		 WHERE sync_granularity IS NOT NULL`,
 	}
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {

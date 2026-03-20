@@ -18,7 +18,7 @@ import (
 )
 
 const sidecarFilename = "metadata.json"
-const schemaVersion = 1
+const schemaVersion = 2
 
 // Sidecar is the complete in-memory representation of a metadata.json file.
 // Field names match the JSON keys defined in schema-spec.md.
@@ -53,8 +53,9 @@ type Sidecar struct {
 	Covers  *SidecarCovers            `json:"covers,omitempty"`
 	Files   []SidecarFile             `json:"files,omitempty"`
 
-	Audiobook    *SidecarAudiobook    `json:"audiobook,omitempty"`
-	MediaOverlay *SidecarMediaOverlay `json:"media_overlay,omitempty"`
+	Audiobook     *SidecarAudiobook     `json:"audiobook,omitempty"`
+	MediaOverlay  *SidecarMediaOverlay  `json:"media_overlay,omitempty"`
+	Accessibility *SidecarAccessibility `json:"accessibility,omitempty"`
 
 	Links    []SidecarLink `json:"links,omitempty"`
 	Metadata SidecarMeta  `json:"metadata"`
@@ -128,12 +129,123 @@ type SidecarChapter struct {
 	Index        int     `json:"index"`
 }
 
-// SidecarMediaOverlay describes an aligned EPUB3 with media overlays.
+// SidecarMediaOverlay describes an aligned EPUB3 with media overlays (SMIL-based readaloud).
+// The referenced file is an EPUB3 that contains SMIL Media Overlay documents synchronising
+// the original text spine items with pre-recorded audio.
 type SidecarMediaOverlay struct {
 	AlignedEPUBFilename string    `json:"aligned_epub_filename"`
 	AlignmentTool       string    `json:"alignment_tool,omitempty"`
 	AlignmentVersion    string    `json:"alignment_version,omitempty"`
 	AlignedAt           time.Time `json:"aligned_at,omitzero"`
+
+	// Narrator and audio details for the overlay recording.
+	// These complement the top-level contributors list: the narrator here is
+	// specifically the voice used in the SMIL audio clips, which may differ
+	// from the commercial audiobook narrator stored in contributors.
+	OverlayNarratorName     string `json:"overlay_narrator_name,omitempty"`
+	OverlayNarratorLanguage string `json:"overlay_narrator_language,omitempty"` // BCP-47, e.g. "en-US"
+	OverlayDurationSeconds  int    `json:"overlay_duration_seconds,omitempty"`
+
+	// SMIL synchronisation details.
+	SMILVersion      string `json:"smil_version,omitempty"`       // e.g. "3.0"
+	SyncGranularity  string `json:"sync_granularity,omitempty"`   // "word" | "sentence" | "paragraph"
+	ActiveClass      string `json:"active_class,omitempty"`       // CSS class applied to active text element
+	PlaybackActiveClass string `json:"playback_active_class,omitempty"` // CSS class applied while playing
+}
+
+// SidecarAccessibility holds EPUB Accessibility 1.1 metadata required by the
+// EU Accessibility Act (EAA, Directive 2019/882). All field names align with
+// the schema.org / a11y vocabulary used in EPUB package documents and exposed
+// by the Readium AccessibilityMetadataDisplayGuide.
+//
+// Spec references:
+//   - EPUB Accessibility 1.1: https://www.w3.org/TR/epub-a11y-11/
+//   - schema.org accessibility vocabulary
+//   - Readium AccessibilityMetadataDisplayGuide (Kotlin/Swift toolkits)
+type SidecarAccessibility struct {
+	// ── Ways of Reading ─────────────────────────────────────────────────────
+	// schema:accessMode — the human sensory perceptibility required to consume
+	// the resource. Enumerated values from the EPUB Accessibility vocabulary:
+	// "auditory", "tactile", "textual", "visual", "colorDependent",
+	// "chartOnVisual", "chemOnVisual", "diagramOnVisual", "mathOnVisual",
+	// "musicOnVisual", "textOnVisual".
+	AccessModes []string `json:"access_modes,omitempty"`
+
+	// schema:accessModeSufficient — one or more sets of access modes that each
+	// on their own provide complete access to the content. Represented as an
+	// array of arrays, e.g. [["textual"], ["auditory","textual"]].
+	AccessModesSufficient [][]string `json:"access_modes_sufficient,omitempty"`
+
+	// schema:accessibilityFeature — specific content features that aid
+	// accessibility. Key values for aligned readalouds:
+	//   "synchronizedAudioText"   — SMIL media overlays present
+	//   "readingOrder"            — logical reading order defined
+	//   "structuralNavigation"    — headings/landmarks present
+	//   "tableOfContents"         — navigable TOC
+	//   "alternativeText"         — images carry alt text
+	//   "displayTransformability" — reflowable / font-size adjustable
+	//   "printPageNumbers"        — page-break markers correspond to print
+	//   "SSML"                    — SSML attributes present for TTS
+	//   "ttsMarkup"               — general TTS markup
+	//   "rubyAnnotations"         — ruby for CJK text
+	//   "longDescription"         — extended descriptions for complex images
+	//   "MathML"                  — math in MathML
+	//   "describedMath"           — math described in prose
+	//   "transcript"              — transcript for audio/video
+	//   "captions"                — captions for audio/video
+	Features []string `json:"features,omitempty"`
+
+	// schema:accessibilityHazard — known hazards. Values: "flashing",
+	// "motionSimulation", "sound", "noFlashingHazard",
+	// "noMotionSimulationHazard", "noSoundHazard", "none", "unknown".
+	Hazards []string `json:"hazards,omitempty"`
+
+	// schema:accessibilitySummary — human-readable statement of what
+	// accessibility is and is not provided. Required by EPUB A11y 1.1.
+	// Must complement, not duplicate, the structured fields above.
+	Summary string `json:"summary,omitempty"`
+
+	// ── Conformance ─────────────────────────────────────────────────────────
+	// EPUB Accessibility 1.1 conformance claim (dcterms:conformsTo).
+	// Required by the EU Accessibility Act for ebooks published after
+	// 28 June 2025. WCAG level AA is the minimum required level.
+	Conformance *SidecarA11yConformance `json:"conformance,omitempty"`
+
+	// ── Legal exemptions ─────────────────────────────────────────────────────
+	// Optional: jurisdictions where the work is exempt from accessibility
+	// requirements (e.g. small publisher exemption under EAA Article 14).
+	// Free-text; not machine-actionable.
+	LegalExemptions []string `json:"legal_exemptions,omitempty"`
+}
+
+// SidecarA11yConformance captures the formal conformance claim required by
+// EPUB Accessibility 1.1, section 4.  This maps directly to the a11y: metadata
+// elements in the EPUB package document.
+type SidecarA11yConformance struct {
+	// The specific standard claimed, written as the full dcterms:conformsTo
+	// value, e.g. "EPUB Accessibility 1.1 - WCAG 2.1 Level AA".
+	Standard string `json:"standard,omitempty"`
+
+	// WCAG conformance level: "A", "AA", or "AAA".
+	// EU Accessibility Act requires minimum Level AA.
+	WCAGLevel string `json:"wcag_level,omitempty"`
+
+	// WCAG version: "2.0", "2.1", or "2.2".
+	WCAGVersion string `json:"wcag_version,omitempty"`
+
+	// a11y:certifiedBy — name of the organisation or individual that evaluated
+	// and certified the accessibility of this publication.
+	Certifier string `json:"certifier,omitempty"`
+
+	// a11y:certifierCredential — URL of the certifier's credential or
+	// accessibility-evaluator accreditation.
+	CertifierCredential string `json:"certifier_credential,omitempty"`
+
+	// a11y:certifierReport — URL of the full accessibility evaluation report.
+	CertifierReport string `json:"certifier_report,omitempty"`
+
+	// Date the conformance was certified (ISO 8601, YYYY-MM-DD).
+	CertificationDate string `json:"certification_date,omitempty"`
 }
 
 // SidecarLink is an external reference URL.
